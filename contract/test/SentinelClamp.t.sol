@@ -360,7 +360,9 @@ contract SentinelClampTest is Test {
             uint256 currentSpent,
             uint256 remaining,
             uint256 timeUntilReset,
-            ,            ,            
+            ,
+            ,
+            
         ) = sentinel.getStatus();
         
         assertEq(currentSpent, 0); // Should show as reset

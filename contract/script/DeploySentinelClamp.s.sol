@@ -51,7 +51,6 @@ contract DeploySentinelClamp is Script {
         console.log("Is Paused:", isPaused);
         console.log("Total Transactions:", txCount);
         console.log("x402 Transactions:", x402TxCount);
-        console.log("Total Transactions:", txCount);
         
         vm.stopBroadcast();
         

@@ -1,17 +1,27 @@
 {
-  "name": "backend",
+  "name": "csa-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Cronos Sentinel Agent - Backend agents for x402 economy",
+  "main": "src/index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node src/test/test-x402-handshake.js",
+    "start": "node src/index.js",
+    "mock-service": "node src/services/mock-audit-service.js",
+    "demo": "node src/test/demo-x402.js"
   },
-  "keywords": [],
+  "keywords": [
+    "cronos",
+    "x402",
+    "ai-agent",
+    "hackathon"
+  ],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "license": "MIT",
   "dependencies": {
     "@crypto.com/facilitator-client": "^1.0.2",
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "ethers": "^6.16.0",
     "express": "^5.2.1"
