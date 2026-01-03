@@ -7,8 +7,10 @@
   "scripts": {
     "test": "node src/test/test-x402-handshake.js",
     "start": "node src/index.js",
-    "mock-service": "node src/services/mock-audit-service.js",
-    "demo": "node src/test/demo-x402.js"
+    "service": "node src/services/facilitator-service.js",
+    "demo": "node src/test/demo-x402.js",
+    "demo:full": "node src/test/demo-x402-full.js",
+    "check": "node src/test/check-config.js"
   },
   "keywords": [
     "cronos",

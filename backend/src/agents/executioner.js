@@ -58,49 +58,65 @@ export class ExecutionerAgent {
   }
 
   /**
-   * Create EIP-712 signed payment proof
+   * Create EIP-3009 authorization signature for x402 facilitator
    * 
-   * @param {Object} paymentData - Payment details (recipient, amount, timestamp, etc.)
-   * @returns {string} JSON string with signature and payment data
+   * This creates a transferWithAuthorization signature that allows the facilitator
+   * to move USDC.e tokens on behalf of the buyer without requiring gas from the buyer.
+   * 
+   * @param {Object} transferData - Transfer details (to, value, validBefore, etc.)
+   * @returns {Object} Payment header data with signature
    */
-  async createEIP712PaymentProof(paymentData) {
+  async createEIP3009Authorization(transferData) {
     try {
-      // EIP-712 Domain
+      const { to, value, validAfter = 0, validBefore, nonce } = transferData;
+      
+      // EIP-712 Domain for USDC.e contract
       const domain = {
-        name: 'Cronos x402 Payment',
+        name: 'Bridged USDC (Stargate)',
         version: '1',
-        chainId: 338, // Cronos testnet
-        verifyingContract: process.env.SENTINEL_CLAMP_ADDRESS
+        chainId: parseInt(process.env.CHAIN_ID || '338'),
+        verifyingContract: process.env.USDC_CONTRACT_ADDRESS
       };
 
-      // EIP-712 Types
+      // EIP-3009 TransferWithAuthorization type
       const types = {
-        Payment: [
-          { name: 'recipient', type: 'address' },
-          { name: 'amount', type: 'uint256' },
-          { name: 'currency', type: 'string' },
-          { name: 'description', type: 'string' },
-          { name: 'timestamp', type: 'uint256' }
+        TransferWithAuthorization: [
+          { name: 'from', type: 'address' },
+          { name: 'to', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'validAfter', type: 'uint256' },
+          { name: 'validBefore', type: 'uint256' },
+          { name: 'nonce', type: 'bytes32' }
         ]
       };
 
-      // Sign the structured data
-      const signature = await this.wallet.signTypedData(domain, types, paymentData);
-
-      // Return proof as JSON
-      const proof = {
-        paymentData,
-        signature,
-        domain,
-        signer: this.wallet.address
+      const message = {
+        from: this.wallet.address,
+        to,
+        value,
+        validAfter,
+        validBefore,
+        nonce
       };
 
-      console.log(`   🔐 EIP-712 signature created: ${signature.substring(0, 20)}...`);
+      // Sign using EIP-712
+      const signature = await this.wallet.signTypedData(domain, types, message);
 
-      return JSON.stringify(proof);
+      console.log(`   🔐 EIP-3009 authorization signed: ${signature.substring(0, 20)}...`);
+
+      return {
+        from: this.wallet.address,
+        to,
+        value,
+        validAfter,
+        validBefore,
+        nonce,
+        signature,
+        asset: process.env.USDC_CONTRACT_ADDRESS
+      };
 
     } catch (error) {
-      console.error('❌ Failed to create EIP-712 signature:', error.message);
+      console.error('❌ Failed to create EIP-3009 signature:', error.message);
       throw error;
     }
   }
@@ -171,7 +187,7 @@ export class ExecutionerAgent {
   }
 
   /**
-   * Request service with x402 payment handling
+   * Request service with x402 payment handling using real facilitator
    * 
    * @param {string} serviceUrl - URL of the x402 service
    * @param {Object} options - Request options
@@ -198,66 +214,75 @@ export class ExecutionerAgent {
         if (error.response && error.response.status === 402) {
           console.log('💰 Service requires payment (402)');
           
-          // Extract payment details from PAYMENT-REQUIRED header (x402 spec)
-          const paymentRequiredHeader = error.response.headers['payment-required'];
-          let paymentDetails;
+          // Extract payment requirements from response body
+          const paymentData = error.response.data;
+          const paymentRequirements = paymentData.paymentRequirements;
           
-          if (paymentRequiredHeader) {
-            // Decode base64 payment requirement
-            const decodedPayment = Buffer.from(paymentRequiredHeader, 'base64').toString('utf-8');
-            paymentDetails = JSON.parse(decodedPayment);
-            console.log('   📋 Decoded PAYMENT-REQUIRED header (x402 spec compliant)');
-          } else {
-            // Fallback to legacy headers
-            paymentDetails = {
-              recipient: error.response.headers['x-payment-address'],
-              amount: error.response.headers['x-payment-amount'],
-              currency: error.response.headers['x-payment-currency'] || 'TCRO',
-              chainId: parseInt(error.response.headers['x-payment-chain-id'] || '338'),
-              description: 'Service Payment',
-              timestamp: Date.now()
-            };
+          if (!paymentRequirements) {
+            throw new Error('Invalid 402 response: missing paymentRequirements');
           }
           
-          console.log(`   Payment Address: ${paymentDetails.recipient}`);
-          console.log(`   Payment Amount: ${paymentDetails.amount || ethers.formatEther(paymentDetails.amount)} TCRO`);
+          console.log(`   📋 Payment Requirements:`);
+          console.log(`      Network: ${paymentRequirements.network}`);
+          console.log(`      Pay To: ${paymentRequirements.payTo}`);
+          console.log(`      Amount: ${paymentRequirements.maxAmountRequired} (smallest unit)`);
+          console.log(`      Asset: ${paymentRequirements.asset}`);
           
-          // Create EIP-712 signed payment proof
-          const paymentData = {
-            recipient: paymentDetails.recipient,
-            amount: paymentDetails.amount.toString().includes('.') 
-              ? ethers.parseEther(paymentDetails.amount).toString() 
-              : paymentDetails.amount.toString(),
-            currency: paymentDetails.currency,
-            description: paymentDetails.description || 'x402 Service Payment',
-            timestamp: (paymentDetails.timestamp || Date.now()).toString()
+          // Generate unique nonce for this payment
+          const nonce = ethers.hexlify(ethers.randomBytes(32));
+          
+          // Calculate validBefore (5 minutes from now)
+          const validBefore = Math.floor(Date.now() / 1000) + 300;
+          
+          // Create EIP-3009 authorization
+          console.log(`\n   🔐 Creating EIP-3009 authorization...`);
+          const authorization = await this.createEIP3009Authorization({
+            to: paymentRequirements.payTo,
+            value: paymentRequirements.maxAmountRequired,
+            validAfter: 0,
+            validBefore,
+            nonce
+          });
+          
+          // Build payment header (x402 spec)
+          const paymentHeader = {
+            x402Version: 1,
+            scheme: paymentRequirements.scheme,
+            network: paymentRequirements.network,
+            payload: authorization
           };
           
-          const paymentProof = await this.createEIP712PaymentProof(paymentData);
+          // Base64 encode payment header
+          const paymentHeaderBase64 = Buffer.from(
+            JSON.stringify(paymentHeader)
+          ).toString('base64');
           
-          // Pay via SentinelClamp
-          const amountInEther = paymentDetails.amount.toString().includes('.') 
-            ? paymentDetails.amount 
-            : ethers.formatEther(paymentDetails.amount);
+          console.log(`   📦 Payment header created (Base64 encoded)`);
           
-          const payment = await this.payViaX402(
-            paymentDetails.recipient, 
-            amountInEther, 
-            paymentProof
-          );
-          
-          // Retry request with payment proof
-          console.log(`\n🔄 Retrying request with payment proof...`);
+          // Retry request with X-PAYMENT header
+          console.log(`\n🔄 Retrying request with payment header...`);
           const paidResponse = await axios.get(serviceUrl, {
             ...options,
             headers: {
               ...options.headers,
-              'X-Payment-Proof': paymentProof,
-              'X-Payment-Tx': payment.txHash
+              'X-PAYMENT': paymentHeaderBase64
             }
           });
           
-          console.log('✅ Service data received!');
+          console.log('✅ Service data received with payment!');
+          
+          // Log settlement info if available
+          if (paidResponse.data.settlement) {
+            const s = paidResponse.data.settlement;
+            console.log(`\n💎 Payment Settled:`);
+            console.log(`   Tx Hash: ${s.txHash}`);
+            console.log(`   Block: ${s.blockNumber}`);
+            console.log(`   From: ${s.from}`);
+            console.log(`   To: ${s.to}`);
+            console.log(`   Amount: ${s.value} (smallest unit)`);
+            console.log(`   Network: ${s.network}`);
+          }
+          
           return paidResponse.data;
           
         } else {
@@ -268,6 +293,9 @@ export class ExecutionerAgent {
 
     } catch (error) {
       console.error('❌ x402 service request failed:', error.message);
+      if (error.response?.data) {
+        console.error('   Response:', JSON.stringify(error.response.data, null, 2));
+      }
       throw error;
     }
   }
