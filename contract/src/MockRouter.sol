@@ -112,7 +112,7 @@ contract MockRouter {
         uint256 amountIn,
         uint256 amountOutMin,
         address[] calldata path,
-        address to
+        address /* to */
     ) external returns (
         bool wouldSucceed,
         uint256 expectedOut,
@@ -211,7 +211,7 @@ contract MockRouter {
     function swapExactETHForTokens(
         uint256 amountOutMin,
         address[] calldata path,
-        address to,
+        address /* to */,
         uint256 deadline
     ) external payable returns (uint256[] memory amounts) {
         require(deadline >= block.timestamp, "MockRouter: EXPIRED");
@@ -285,6 +285,13 @@ contract MockRouter {
         
         // Apply mock rate
         return (amountIn * rate) / 1e18;
+    }
+    
+    /**
+     * @notice Get WETH/WCRO address (for VVS compatibility)
+     */
+    function WCRO() external view returns (address) {
+        return WETH;
     }
     
     /**

@@ -6,7 +6,7 @@ import {MockRouter} from "../src/MockRouter.sol";
 
 contract DeployMockRouter is Script {
     // WCRO address on Cronos Testnet (standard across networks)
-    address public constant WCRO_TESTNET = 0x5C7F8A570d578ED84E63fdFA7b5A2f628d2b4D2a;
+    address public constant WCRO_TESTNET = 0x5C7F8a570d578Ed84e63FdFA7b5a2f628d2B4d2A;
     
     // USDC.e address on Cronos Testnet
     address public constant USDC_TESTNET = 0xc01efAaF7C5C61bEbFAeb358E1161b537b8bC0e0;
