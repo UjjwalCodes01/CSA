@@ -10,7 +10,11 @@
     "service": "node src/services/facilitator-service.js",
     "demo": "node src/test/demo-x402.js",
     "demo:full": "node src/test/demo-x402-full.js",
-    "check": "node src/test/check-config.js"
+    "demo:trade:approved": "node src/test/demo-trade-approved.js",
+    "demo:trade:blocked": "node src/test/demo-trade-blocked.js",
+    "check": "node src/test/check-config.js",
+    "swap:approved": "node src/test/demo-swap-approved-native.js",
+    "swap:blocked": "node src/test/demo-swap-blocked-simple.js"
   },
   "keywords": [
     "cronos",
