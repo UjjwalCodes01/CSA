@@ -4,6 +4,9 @@ numpy>=2.0.0
 # Crypto.com AI Agent SDK (will skip numpy constraint)
 cryptocom-agent-client
 
+# X402 Paytech Protocol Support
+crypto-com-facilitator-client>=1.0.3
+
 # Additional dependencies
 python-dotenv
 web3
