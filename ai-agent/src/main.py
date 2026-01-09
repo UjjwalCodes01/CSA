@@ -75,14 +75,44 @@ def create_agent():
     # Initialize SQLite storage for session persistence
     storage = SQLitePlugin(db_path="agent_state.db")
     
+    # Check if using Vertex AI (GCP) or AI Studio (API key)
+    gcp_project_id = os.getenv("GCP_PROJECT_ID")
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    
+    # Prioritize Vertex AI if GCP project is configured
+    if gcp_project_id:
+        # Use Vertex AI with Google's generative AI library
+        # This will use application-default credentials we set up
+        import vertexai
+        
+        # Initialize Vertex AI
+        vertexai.init(project=gcp_project_id, location="us-central1")
+        
+        # Configure SDK to use Gemini through Vertex AI billing
+        llm_config = {
+            "provider": Provider.GoogleGenAI,
+            "model": "gemini-2.0-flash-exp",  # Use model that works with both
+            "provider-api-key": gemini_api_key,  # Still needed for SDK
+            "temperature": 0.7,
+        }
+        print(f"🔧 Using Vertex AI: {gcp_project_id}")
+        print("   Model: gemini-2.0-flash-exp (GCP billing)")
+        
+    elif gemini_api_key:
+        llm_config = {
+            "provider": Provider.GoogleGenAI,
+            "model": "gemini-2.5-flash",
+            "provider-api-key": gemini_api_key,
+            "temperature": 0.7,
+        }
+        print("🔧 Using Gemini AI Studio (free tier)")
+        print("   Model: gemini-2.5-flash")
+    else:
+        raise ValueError("Either GCP_PROJECT_ID or GEMINI_API_KEY required in .env")
+    
     # Initialize agent
     agent = Agent.init(
-        llm_config={
-            "provider": Provider.GoogleGenAI,
-            "model": "gemini-2.0-flash-exp",  # Using experimental version
-            "provider-api-key": os.getenv("GEMINI_API_KEY"),
-            "temperature": 0.7,  # Balanced creativity and consistency
-        },
+        llm_config=llm_config,
         blockchain_config={
             "api-key": os.getenv("DEVELOPER_PLATFORM_API_KEY"),
             "private-key": os.getenv("PRIVATE_KEY"),

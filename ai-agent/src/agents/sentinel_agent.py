@@ -164,8 +164,8 @@ def can_afford_swap(amount_cro: float) -> Dict[str, Any]:
     Returns:
         dict: Affordability analysis with recommendations
     """
-    # Get Sentinel status
-    status = get_sentinel_status()
+    # Get Sentinel status using invoke
+    status = get_sentinel_status.invoke({})
     
     if "error" in status:
         return {
@@ -232,7 +232,7 @@ def recommend_safe_swap_amount() -> Dict[str, Any]:
     Returns:
         dict: Recommended amounts (conservative, moderate, maximum)
     """
-    status = get_sentinel_status()
+    status = get_sentinel_status.invoke({})
     
     if "error" in status:
         return {"error": "Cannot get recommendations", "reason": status["error"]}
