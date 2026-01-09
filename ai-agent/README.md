@@ -1,6 +1,6 @@
 # Cronos Sentinel Agent - AI Intelligence Layer
 
-AI-powered DeFi trading agent with blockchain-enforced safety limits.
+AI-powered DeFi trading agent with blockchain-enforced safety limits and multi-agent intelligence.
 
 ## 📁 Project Structure
 
@@ -9,12 +9,16 @@ ai-agent/
 ├── src/
 │   ├── main.py                    # Main agent entry point
 │   └── agents/
-│       ├── market_data_agent.py   # Exchange API integration
-│       └── sentinel_agent.py      # Smart contract safety tools
+│       ├── market_data_agent.py   # Exchange API integration (Day 8-10)
+│       ├── sentinel_agent.py      # Smart contract safety tools (Day 8-10)
+│       └── sentiment_agent.py     # Twitter sentiment analysis (Day 11) ✨ NEW
 ├── tests/
 │   └── test_market_data.py        # Day 8-10 tests
+├── test_sentiment.py              # Day 11 sentiment tests ✨ NEW
 ├── .env                           # Configuration (DO NOT COMMIT)
 ├── requirements.txt               # Python dependencies
+├── DAY_11_SENTIMENT_COMPLETE.md   # Day 11 status report ✨ NEW
+├── DAY_11_EXAMPLE_QUERIES.md      # Example interactions ✨ NEW
 └── README.md                      # This file
 ```
 
@@ -29,10 +33,11 @@ pip install -r requirements.txt
 
 ### 2. Configure Environment
 
-Edit `.env` file and add your Gemini API key:
+Edit `.env` file and add your API keys:
 
 ```bash
 GEMINI_API_KEY=your-gemini-api-key-here
+TWITTER_BEARER_TOKEN=your-twitter-bearer-token-here  # Optional for Day 11
 ```
 
 All other values are pre-configured for Cronos EVM Testnet.
@@ -40,14 +45,16 @@ All other values are pre-configured for Cronos EVM Testnet.
 ### 3. Run the Agent
 
 ```bash
-cd src
-python main.py
+python3 src/main.py
 ```
 
 ### 4. Test Queries
 
 Try these commands:
 - `"What is the current CRO price?"`
+- `"What is the sentiment for CRO?"` ✨ NEW
+- `"Show me trending tokens"` ✨ NEW
+- `"Should I buy CRO now?"` ✨ NEW (multi-agent analysis)
 - `"Can I swap 0.05 CRO to USDC?"`
 - `"What is my Sentinel status?"`
 - `"Recommend a safe swap amount"`
@@ -55,29 +62,45 @@ Try these commands:
 ## 🧪 Run Tests
 
 ```bash
+# Test market data agent (Day 8-10)
 cd tests
-python test_market_data.py
+python3 test_market_data.py
+
+# Test sentiment agent (Day 11) ✨ NEW
+python3 test_sentiment.py
 ```
 
-## 🎯 Day 8-10 Features
+## 🎯 Features by Day
 
-### ✅ Market Data Agent
+### ✅ Day 8-10: Market Data & Sentinel Agent
 - Real-time CRO/USDT price from Crypto.com Exchange
 - Price condition checking (`CRO < $0.10`)
 - Market analysis and recommendations
 - Swap value calculations
-
-### ✅ Sentinel Safety Agent
 - Pre-transaction approval checks (no gas cost!)
 - Daily limit monitoring (1 CRO limit)
 - Safe amount recommendations
 - Blockchain-enforced safety
 
+### ✅ Day 11-13: Sentiment Agent ✨ NEW
+- Twitter sentiment analysis (real API + mock fallback)
+- **Weighted keyword scoring** - Strong/medium/mild keywords (3x/2x/1x)
+- **Volume-adjusted confidence** - More tweets = higher confidence
+- Token sentiment scores (10-90 scale, 5 sentiment levels)
+- Trending token detection (score + volume weighted)
+- Multi-token comparison (CRO, BTC, ETH, USDC)
+- Sentiment-based trade recommendations with risk levels
+- Conditional trading logic
+
 ### ✅ AI Integration
 - Natural language queries
-- Gemini 2.0 Flash model
+- Gemini 2.5 Flash model
 - Custom personality (safety-focused)
 - Session persistence (SQLite)
+- **13 custom tools** across 3 specialized agents:
+  - 5 market data tools
+  - 4 Sentinel safety tools
+  - 4 sentiment analysis tools ✨ NEW
 
 ## 🔧 Configuration
 
@@ -97,8 +120,26 @@ python test_market_data.py
 ### Market Data Query
 ```
 You: What is the CRO price?
-Agent: The current CRO/USDT price is $0.085. 
-       24h change: +3.2%, Volume: $1.2M
+Agent: The current CRO/USDT price is $0.10189. 
+       24h change: +2.5%, Trend: Consolidating
+```
+
+### Sentiment Analysis ✨ NEW
+```
+You: What's the sentiment for CRO?
+Agent: CRO sentiment is 78/100 (Bullish), trending with 1234 mentions.
+       This is a favorable time for trading based on social sentiment.
+```
+
+### Multi-Agent Analysis ✨ NEW
+```
+You: Should I buy CRO now?
+Agent: Let me analyze comprehensively...
+       📊 Market: $0.10189, consolidating sideways
+       🐦 Sentiment: 78/100 bullish, trending
+       🛡️ Sentinel: 1.0 CRO available
+       
+       ✅ Recommendation: Favorable conditions for trading.
 ```
 
 ### Safety Check
