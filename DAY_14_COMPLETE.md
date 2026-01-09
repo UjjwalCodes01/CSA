@@ -79,16 +79,7 @@ python3 src/telegram_bot.py
 
 ### API Direct Test (Optional)
 ```bash
-# Health check
-curl http://localhost:3001/health
 
-# Sentinel status
-curl -H "X-API-Key: sentinel-2024-cronos-hackathon-api-key" \
-  http://localhost:3001/api/sentinel/status
-
-# Wallet balance
-curl -H "X-API-Key: sentinel-2024-cronos-hackathon-api-key" \
-  http://localhost:3001/api/wallet/balance
 ```
 
 ## Key Features
@@ -109,20 +100,7 @@ curl -H "X-API-Key: sentinel-2024-cronos-hackathon-api-key" \
 
 ## Environment Variables
 
-**backend/.env:**
-```env
-API_PORT=3001
-API_KEY=sentinel-2024-cronos-hackathon-api-key
-PRIVATE_KEY=...
-RPC_URL=https://evm-t3.cronos.org
-VVS_ROUTER_ADDRESS=0x145863Eb42Cf62847A6Ca784e6416C1682b1b2Ae
-SENTINEL_CLAMP_ADDRESS=0x2db87A4BBE1F767FFCB0338dAeD600fc096759Ff
-```
 
-**ai-agent/.env:**
-```env
-
-```
 
 ## Status
 
