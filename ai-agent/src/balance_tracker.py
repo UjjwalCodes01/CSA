@@ -124,10 +124,10 @@ class BalanceTracker:
     
     def get_all_balances(self) -> Dict:
         """Get all tracked balances"""
-        # Known tokens - use TEST tokens instead of mainnet tokens
+        # Known tokens - use WCRO (ecosystem standard) and tUSD
         tokens = {
-            "tCRO": {
-                "address": os.getenv("TEST_CRO_ADDRESS"),
+            "WCRO": {
+                "address": os.getenv("WCRO_ADDRESS"),
                 "decimals": 18
             },
             "tUSD": {
