@@ -1,10 +1,9 @@
 """
 Multi-Source Sentiment Aggregator
-Since Twitter API is restricted, this aggregates sentiment from multiple sources:
+Aggregates sentiment from:
 - CoinGecko trending/sentiment data
-- Reddit mentions (via Apify Reddit scraper)
-- News headlines
-- On-chain metrics
+- Reddit mentions (via free Reddit API)
+- Price action analysis
 """
 
 import os
@@ -40,7 +39,6 @@ class SentimentAggregator:
             
             # Community data
             community = data.get("community_data", {})
-            twitter_followers = community.get("twitter_followers", 0)
             reddit_subscribers = community.get("reddit_subscribers", 0)
             
             # Calculate sentiment score (-1 to 1)
@@ -49,9 +47,8 @@ class SentimentAggregator:
             return {
                 "source": "coingecko",
                 "sentiment_score": sentiment_score,
-                "sentiment_up": sentiment_votes_up,
-                "sentiment_down": sentiment_votes_down,
-                "twitter_followers": twitter_followers,
+                "sentiment_votes_up": sentiment_votes_up,
+                "sentiment_votes_down": sentiment_votes_down,
                 "reddit_subscribers": reddit_subscribers,
                 "timestamp": datetime.now().isoformat()
             }

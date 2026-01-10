@@ -7,8 +7,7 @@ cryptocom-agent-client
 # X402 Paytech Protocol Support
 crypto-com-facilitator-client>=1.0.3
 
-# Autonomous Trading Dependencies (Week 2)
-apify-client>=2.4.0
+# Autonomous Trading Dependencies
 vaderSentiment>=3.3.2
 schedule>=1.2.0
 
