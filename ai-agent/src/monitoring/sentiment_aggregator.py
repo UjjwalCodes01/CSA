@@ -4,14 +4,22 @@ Aggregates sentiment from:
 - CoinGecko trending/sentiment data
 - Reddit mentions (via free Reddit API)
 - Price action analysis
+- REAL NEWS SENTIMENT (CryptoPanic + Google News + Gemini AI)
 """
 
 import os
+import sys
 import requests
 from typing import Dict, List
 from datetime import datetime
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from dotenv import load_dotenv
+
+# Handle imports for both direct run and module import
+try:
+    from .real_sentiment import RealSentimentAnalyzer
+except ImportError:
+    from real_sentiment import RealSentimentAnalyzer
 
 load_dotenv()
 
@@ -22,6 +30,8 @@ class SentimentAggregator:
     def __init__(self):
         self.analyzer = SentimentIntensityAnalyzer()
         self.coingecko_api = "https://api.coingecko.com/api/v3"
+        self.real_sentiment = RealSentimentAnalyzer()  # NEW: Real news sentiment
+        self.reddit_headers = {"User-Agent": "CronosSentinel/1.0 (Autonomous Trading Bot)"}
     
     def get_coingecko_sentiment(self, coin_id: str = "crypto-com-chain") -> Dict:
         """Get sentiment data from CoinGecko"""
@@ -81,60 +91,73 @@ class SentimentAggregator:
             print(f"Trending check error: {e}")
             return None
     
-    def analyze_price_action(self, coin_id: str = "crypto-com-chain") -> Dict:
-        """Analyze recent price action as sentiment indicator"""
+    def get_reddit_sentiment(self, query: str = "Cronos CRO") -> Dict:
+        """Get sentiment from Reddit (FREE API, no auth needed)"""
         try:
-            # Get market data
-            response = requests.get(
-                f"{self.coingecko_api}/coins/{coin_id}/market_chart",
-                params={"vs_currency": "usd", "days": "1", "interval": "hourly"}
-            )
-            data = response.json()
+            subreddits = ["CryptoCurrency", "CronosOfficial", "Crypto_com"]
+            all_posts = []
             
-            prices = [p[1] for p in data.get("prices", [])]
-            volumes = [v[1] for v in data.get("total_volumes", [])]
+            for subreddit in subreddits:
+                try:
+                    url = f"https://www.reddit.com/r/{subreddit}/search.json"
+                    params = {"q": query, "limit": 10, "sort": "new", "restrict_sr": "true"}
+                    response = requests.get(url, params=params, headers=self.reddit_headers, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        for child in data['data']['children']:
+                            post = child['data']
+                            all_posts.append({
+                                "title": post.get('title', ''),
+                                "text": post.get('selftext', ''),
+                                "score": post.get('score', 0),
+                                "upvote_ratio": post.get('upvote_ratio', 0),
+                                "num_comments": post.get('num_comments', 0)
+                            })
+                except:
+                    continue
             
-            if len(prices) < 2:
+            if not all_posts:
                 return None
             
-            # Calculate momentum indicators
-            price_change_24h = ((prices[-1] - prices[0]) / prices[0]) * 100
-            recent_change = ((prices[-1] - prices[-6]) / prices[-6]) * 100  # Last 6 hours
+            # Analyze sentiment with crypto slang
+            bullish_keywords = ['bullish', 'moon', 'pump', 'buy', 'lfg', 'hodl', 'gem', 'rocket', '🚀', '📈']
+            bearish_keywords = ['bearish', 'dump', 'sell', 'fud', 'scam', 'rugpull', '📉', '💩']
             
-            avg_volume = sum(volumes) / len(volumes)
-            recent_volume = volumes[-1]
-            volume_spike = (recent_volume / avg_volume) > 1.5
+            total_sentiment = 0
+            analyzed_count = 0
             
-            # Sentiment from price action
-            if price_change_24h > 5:
-                sentiment = "strong_bullish"
-                score = 0.8
-            elif price_change_24h > 2:
-                sentiment = "bullish"
-                score = 0.5
-            elif price_change_24h < -5:
-                sentiment = "strong_bearish"
-                score = -0.8
-            elif price_change_24h < -2:
-                sentiment = "bearish"
-                score = -0.5
-            else:
-                sentiment = "neutral"
-                score = price_change_24h / 10  # Scale to -1 to 1
+            for post in all_posts[:10]:  # Top 10 posts
+                text = f"{post['title']} {post['text']}".lower()
+                sentiment = self.analyzer.polarity_scores(text)
+                
+                # Boost for crypto slang
+                has_bullish = any(word in text for word in bullish_keywords)
+                has_bearish = any(word in text for word in bearish_keywords)
+                
+                score = sentiment['compound']
+                if has_bullish:
+                    score = min(score + 0.3, 1.0)
+                if has_bearish:
+                    score = max(score - 0.3, -1.0)
+                
+                # Weight by upvote ratio and score
+                weight = post['upvote_ratio'] * (1 + min(post['score'] / 100, 2))
+                total_sentiment += score * weight
+                analyzed_count += weight
+            
+            sentiment_score = total_sentiment / analyzed_count if analyzed_count > 0 else 0
             
             return {
-                "source": "price_action",
-                "sentiment": sentiment,
-                "sentiment_score": score,
-                "price_change_24h": price_change_24h,
-                "recent_change_6h": recent_change,
-                "volume_spike": volume_spike,
-                "current_price": prices[-1],
+                "source": "reddit",
+                "sentiment_score": sentiment_score,
+                "posts_analyzed": len(all_posts),
+                "subreddits": subreddits,
                 "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
-            print(f"Price action error: {e}")
+            print(f"Reddit error: {e}")
             return None
     
     def aggregate_sentiment(self, coin_id: str = "crypto-com-chain") -> Dict:
@@ -143,6 +166,24 @@ class SentimentAggregator:
         print(f"🔍 Aggregating sentiment for {coin_id}...")
         
         sources = []
+        
+        # REAL NEWS SENTIMENT (CryptoPanic + Google News + Gemini AI)
+        try:
+            real_news = self.real_sentiment.get_aggregated_sentiment()
+            if real_news and real_news.get('sentiment_score') != 0:
+                sources.append(real_news)
+                print(f"   ✓ Real News: {real_news['sentiment_score']:.2f} ({real_news['articles_count']} articles)")
+        except Exception as e:
+            print(f"   ⚠️  Real News unavailable: {e}")
+        
+        # Reddit sentiment
+        try:
+            reddit = self.get_reddit_sentiment("Cronos CRO")
+            if reddit and reddit.get('sentiment_score') != 0:
+                sources.append(reddit)
+                print(f"   ✓ Reddit: {reddit['sentiment_score']:.2f} ({reddit['posts_analyzed']} posts)")
+        except Exception as e:
+            print(f"   ⚠️  Reddit unavailable: {e}")
         
         # Collect from all sources
         coingecko = self.get_coingecko_sentiment(coin_id)
@@ -153,11 +194,6 @@ class SentimentAggregator:
         trending = self.get_trending_status(coin_id)
         if trending:
             print(f"   ✓ Trending: {trending['is_trending']}")
-        
-        price_action = self.analyze_price_action(coin_id)
-        if price_action:
-            sources.append(price_action)
-            print(f"   ✓ Price Action: {price_action['sentiment_score']:.2f}")
         
         # Calculate weighted average
         if not sources:
@@ -181,9 +217,8 @@ class SentimentAggregator:
             "avg_sentiment": avg_score,
             "sources": sources,
             "is_trending": trending.get("is_trending", False) if trending else False,
-            "volume_spike": price_action.get("volume_spike", False) if price_action else False,
             "timestamp": datetime.now().isoformat(),
-            "reason": self._generate_reason(signal, avg_score, trending, price_action)
+            "reason": self._generate_reason(signal, avg_score, trending)
         }
     
     def _score_to_signal(self, score: float, trending: Dict) -> tuple:
@@ -203,21 +238,13 @@ class SentimentAggregator:
         else:
             return "hold", 0
     
-    def _generate_reason(self, signal: str, score: float, trending: Dict, price_action: Dict) -> str:
+    def _generate_reason(self, signal: str, score: float, trending: Dict) -> str:
         """Generate human-readable reason for signal"""
         
         reasons = []
         
         if trending and trending.get("is_trending"):
             reasons.append("TRENDING on CoinGecko")
-        
-        if price_action:
-            price_change = price_action.get("price_change_24h", 0)
-            if abs(price_change) > 5:
-                reasons.append(f"Strong price movement: {price_change:+.1f}%")
-            
-            if price_action.get("volume_spike"):
-                reasons.append("Volume spike detected")
         
         if score > 0.6:
             reasons.append("Strong bullish sentiment")

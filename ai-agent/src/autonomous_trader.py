@@ -1,174 +1,109 @@
 """
-Autonomous Trading Agent - Sentinel Alpha Analyst
-Uses structured JSON output for deterministic trading decisions
+Autonomous Trading Agent - Combines Sentinel + Executioner + Social Signals
+This agent makes trading decisions 24/7 without human intervention
 """
 import os
 import sys
-import json
 import time
 import schedule
-import requests
 from typing import Dict
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Get the directory containing this file
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Add paths for imports
-sys.path.insert(0, current_dir)
-sys.path.insert(0, os.path.join(current_dir, '..'))
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from crypto_com_agent_client import Agent, SQLitePlugin
 from crypto_com_agent_client.lib.enums.provider_enum import Provider
-import google.generativeai as genai
 
 from agents.market_data_agent import MARKET_DATA_TOOLS_PRO
 from agents.sentinel_agent import SENTINEL_TOOLS
 from agents.executioner_agent import EXECUTIONER_TOOLS
+from monitoring.sentiment_aggregator import SentimentAggregator
 
 load_dotenv()
 
-# Sentinel Alpha Analyst - Structured Decision System
-SENTINEL_SYSTEM_PROMPT = """You are the "Sentinel Alpha Analyst," an autonomous risk-assessment engine for the Cronos zkEVM ecosystem. 
-Your goal is to convert raw social and market data into a single, actionable "Confidence Score."
+# Autonomous Agent Personality
+AUTONOMOUS_PERSONALITY = {
+    "tone": "decisive and analytical",
+    "language": "English",
+    "verbosity": "concise",
+}
 
-### INPUT DATA SOURCES:
-1. REDDIT (r/Cronos, r/Crypto_com): High-context community discussions.
-2. COINGECKO: Price momentum, volume spikes, and trust scores.
+AUTONOMOUS_INSTRUCTIONS = """You are an AUTONOMOUS DeFi trading agent with 24/7 decision-making authority.
 
-### YOUR ANALYSIS RULES:
-- Slang Detection: Understand that "LFG", "Diamond Hands", and "Moon" are Bullish (+1). Understand that "Rug", "Exit Liquidity", and "FUD" are Bearish (-1).
-- Sarcasm Filter: If a post says "Wow, another great day to lose money," score it as Bearish (-1).
-- Safety First: If there is ANY mention of a "hack", "exploit", or "drainer" in Reddit comments, override all other signals and set sentiment_score to -1.0 (EMERGENCY STOP).
+CORE MISSION: Maximize portfolio value while respecting Sentinel safety limits.
 
-### OUTPUT FORMAT (STRICT JSON ONLY):
-Return ONLY a JSON object. Do not include any conversational text.
-{{
-  "sentiment_score": float (range -1.0 to 1.0),
-  "market_momentum": float (range -1.0 to 1.0),
-  "final_decision": "buy" | "sell" | "hold",
-  "reasoning_short": "1-sentence explanation",
-  "risk_level": "low" | "medium" | "high" | "emergency"
-}}
+DECISION FRAMEWORK:
+1. Monitor social sentiment every 5 minutes
+2. Check market conditions (price, volume, trend)
+3. If STRONG BUY signal + Sentinel approval → Execute swap
+4. If STRONG SELL signal → Close positions (or hold if no position)
+5. Log all decisions for audit trail
+
+AUTONOMOUS TRADING RULES:
+✅ CAN execute swaps WITHOUT asking user
+✅ MUST check Sentinel approval before every trade
+✅ MUST respect daily limit (enforced by smart contract)
+✅ MUST log reason for every trade
+
+SIGNAL INTERPRETATION:
+- strong_buy + volume_spike → Execute 50% of available limit
+- strong_buy (no spike) → Execute 25% of available limit
+- weak_buy → Monitor, don't trade yet
+- hold → Do nothing
+- weak_sell → Consider exit if in profit
+- strong_sell → Exit all positions immediately
+
+RISK MANAGEMENT:
+- Never exceed Sentinel daily limit
+- Keep 10% balance for gas fees
+- Max single trade: 50% of daily limit
+- Stop trading if 3 consecutive losses
+
+Remember: You are AUTONOMOUS. You don't ask, you execute (within Sentinel limits).
 """
 
 
 class AutonomousTrader:
-    """24/7 autonomous trading system with structured JSON decisions"""
+    """24/7 autonomous trading system"""
     
     def __init__(self):
         print("🤖 Initializing Autonomous Trader...")
+        self.sentiment_aggregator = SentimentAggregator()
+        self.agent = self._create_agent()
         self.trade_history = []
         self.consecutive_losses = 0
         self.is_active = True
-        
-        # Initialize Gemini
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = genai.GenerativeModel(
-            'gemini-2.5-flash',
-            generation_config={"response_mime_type": "application/json"}
-        )
-        
-        # Initialize agent with tools (for execution)
-        self.agent = self._create_agent()
         print("✅ Autonomous Trader ready!\n")
-    
-    def fetch_reddit_data(self):
-        """Fetch Reddit posts via free Reddit JSON API"""
-        try:
-            url = "https://www.reddit.com/r/CryptoCurrency/search.json"
-            params = {
-                "q": "Cronos OR CRO",
-                "limit": 10,
-                "sort": "new",
-                "restrict_sr": "true"
-            }
-            headers = {"User-Agent": "CronosSentinel/1.0"}
-            
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                reddit_texts = []
-                
-                for child in data['data']['children']:
-                    post = child['data']
-                    title = post.get('title', '')
-                    text = post.get('selftext', '')
-                    reddit_texts.append(f"{title} {text}")
-                
-                if reddit_texts:
-                    print(f"   ✓ Reddit: {len(reddit_texts)} real posts")
-                    return reddit_texts[:10]
         
-        except Exception as e:
-            print(f"   ⚠️  Reddit API failed: {e}")
-        
-        # Fallback to mock
-        print("   ⚠️  Using mock Reddit data")
-        return [
-            "CRO is looking bullish! LFG! 🚀",
-            "Diamond hands on Cronos",
-            "VVS Finance volume spike"
-        ]
-    
-    def fetch_coingecko_data(self):
-        """Fetch CoinGecko market data"""
-        try:
-            response = requests.get("https://api.coingecko.com/api/v3/coins/crypto-com-chain")
-            data = response.json()
-            
-            price_change = data['market_data']['price_change_percentage_24h']
-            volume = data['market_data']['total_volume']['usd']
-            
-            return {
-                "price_change_24h": round(price_change, 2),
-                "volume_usd": volume,
-                "volume_spike": volume > 10000000
-            }
-        except Exception as e:
-            print(f"   ⚠️  CoinGecko failed: {e}")
-            return {"price_change_24h": 0, "volume_usd": 0, "volume_spike": False}
-    
-    def get_structured_decision(self) -> Dict:
-        """Get structured JSON decision from Gemini"""
-        # Fetch data
-        reddit_data = self.fetch_reddit_data()
-        coingecko_data = self.fetch_coingecko_data()
-        
-        # Prepare payload
-        data_payload = f"""
-REDDIT_DATA (Recent r/Cronos posts):
-{json.dumps(reddit_data, indent=2)}
-
-COINGECKO_DATA:
-{json.dumps(coingecko_data, indent=2)}
-"""
-        
-        try:
-            full_prompt = f"{SENTINEL_SYSTEM_PROMPT}\n\nDATA:\n{data_payload}"
-            response = self.model.generate_content(full_prompt)
-            decision = json.loads(response.text)
-            return decision
-        except Exception as e:
-            print(f"❌ Decision error: {e}")
-            return None
-    
     def _create_agent(self):
-        """Initialize the agent for execution tools"""
+        """Initialize the autonomous agent"""
         all_tools = MARKET_DATA_TOOLS_PRO + SENTINEL_TOOLS + EXECUTIONER_TOOLS
         storage = SQLitePlugin(db_path="autonomous_agent.db")
         
+        gcp_project_id = os.getenv("GCP_PROJECT_ID")
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         
-        llm_config = {
-            "provider": Provider.GoogleGenAI,
-            "model": "gemini-2.5-flash",
-            "provider-api-key": gemini_api_key,
-            "temperature": 0.3,
-        }
-        print("   Using Gemini 2.5-flash for tool execution")
+        if gcp_project_id:
+            import vertexai
+            vertexai.init(project=gcp_project_id, location="us-central1")
+            
+            llm_config = {
+                "provider": Provider.GoogleGenAI,
+                "model": "gemini-2.0-flash-exp",  # Experimental model (has quota limits)
+                "provider-api-key": gemini_api_key,
+                "temperature": 0.3,  # Lower temperature for consistent decisions
+            }
+            print(f"   Using Vertex AI: {gcp_project_id}")
+        else:
+            llm_config = {
+                "provider": Provider.GoogleGenAI,
+                "model": "gemini-2.0-flash-exp",  # Experimental model (has quota limits)
+                "provider-api-key": gemini_api_key,
+                "temperature": 0.3,
+            }
+            print("   Using Gemini AI Studio")
         
         agent = Agent.init(
             llm_config=llm_config,
@@ -178,8 +113,8 @@ COINGECKO_DATA:
                 "timeout": 30,
             },
             plugins={
-                "personality": {"tone": "concise"},
-                "instructions": "Execute trades as instructed. Use tools to check Sentinel and execute swaps.",
+                "personality": AUTONOMOUS_PERSONALITY,
+                "instructions": AUTONOMOUS_INSTRUCTIONS,
                 "tools": all_tools,
                 "storage": storage,
             },
@@ -188,7 +123,12 @@ COINGECKO_DATA:
         return agent
     
     def make_trading_decision(self) -> Dict:
-        """Core decision-making function - called every 5 minutes"""
+        """
+        Core decision-making function - called every 5-10 minutes
+        
+        Returns:
+            Decision dictionary with action taken
+        """
         print(f"\n{'='*60}")
         print(f"🤖 AUTONOMOUS TRADER - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}")
@@ -198,166 +138,84 @@ COINGECKO_DATA:
             print("⏸️  Trading paused (too many losses)")
             return {"action": "paused", "reason": "Risk management"}
         
-        # 2. Get structured decision from Sentinel Alpha Analyst
-        print("📊 Collecting market data...")
-        decision = self.get_structured_decision()
+        # 2. Get latest multi-source sentiment
+        signal = self.sentiment_aggregator.aggregate_sentiment("crypto-com-chain")
         
-        if not decision:
-            print("❌ Failed to get decision")
-            return {"action": "hold", "reason": "Decision error"}
+        print(f"\n📊 Multi-Source Signal: {signal['signal']}")
+        print(f"📊 Sentiment Score: {signal.get('avg_sentiment', 0):.3f}")
+        print(f"💪 Strength: {signal.get('strength', 0)}")
         
-        # Print decision details
-        print(f"\n✅ SENTINEL ALPHA DECISION:")
-        print(f"   Sentiment Score: {decision['sentiment_score']:.3f}")
-        print(f"   Market Momentum: {decision['market_momentum']:.3f}")
-        print(f"   Decision: {decision['final_decision'].upper()}")
-        print(f"   Risk Level: {decision['risk_level'].upper()}")
-        print(f"   Reasoning: {decision['reasoning_short']}")
+        # 3. Build decision prompt for agent
+        prompt = f"""
+AUTONOMOUS TRADING DECISION REQUIRED:
+
+Multi-Source Sentiment: {signal['signal']} (strength: {signal.get('strength', 0)})
+Average Sentiment Score: {signal.get('avg_sentiment', 0):.3f}
+Trending Status: {'🔥 TRENDING' if signal.get('is_trending') else 'Not Trending'}
+Volume Spike: {signal.get('volume_spike', False)}
+Data Sources: {len(signal.get('sources', []))} (CoinGecko, Price Action)
+Reason: {signal.get('reason', 'N/A')}
+
+Current Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Consecutive Losses: {self.consecutive_losses}
+
+ANALYZE AND DECIDE:
+1. Check current CRO price and market conditions
+2. Check Sentinel status and available limit
+3. Check execution feasibility for potential swaps
+4. Based on the signal, decide whether to:
+   - Execute a swap (if strong_buy signal)
+   - Hold position (if weak/neutral signal)  
+   - Exit position (if strong_sell signal)
+5. Provide clear reasoning for your decision
+
+Remember: You have FULL AUTHORITY to execute trades within Sentinel limits.
+Do not ask for confirmation - just execute if conditions are favorable.
+"""
         
-        # 3. Check for emergency stop
-        if decision['risk_level'] == 'emergency':
-            print("🚨 EMERGENCY STOP - Suspicious activity detected")
-            self.is_active = False
-            return {"action": "emergency_stop", "reason": decision['reasoning_short']}
-        
-        # 4. Execute based on decision
-        score = decision['sentiment_score']
-        final_decision = decision['final_decision']
-        risk = decision['risk_level']
-        
-        # Determine trade size based on confidence and risk
-        if risk == 'low' and abs(score) > 0.7:
-            amount = 0.5  # 50% of daily limit (1 CRO max, so 0.5 CRO)
-        elif risk == 'medium' and abs(score) > 0.5:
-            amount = 0.3  # 30% of daily limit
-        else:
-            amount = 0  # No trade
-        
-        # 5. Execute trade via agent if conditions met
-        if final_decision == 'buy' and amount > 0:
-            print(f"\n🚀 EXECUTING BUY: {amount} CRO → USDC")
-            try:
-                prompt = f"Execute swap {amount} CRO to USDC via Sentinel. Check status first, then execute if safe."
-                response = self.agent.interact(prompt)
-                print(f"✅ Trade executed: {response[:200]}")
-                
-                # Log success
-                decision_log = {
-                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "action": "buy",
-                    "amount": amount,
-                    "sentiment": score,
-                    "risk": risk,
-                    "reasoning": decision['reasoning_short'],
-                    "result": "success"
-                }
-                self.trade_history.append(decision_log)
-                self._log_to_file(decision_log)
-                
-                return {"action": "buy", "amount": amount, "result": "success"}
+        # 4. Let agent decide and potentially execute
+        try:
+            response = self.agent.interact(prompt)
+            print(f"\n🤖 Agent Decision:\n{response}")
             
-            except Exception as e:
-                print(f"❌ Trade failed: {e}")
-                self.consecutive_losses += 1
-                if self.consecutive_losses >= 3:
-                    print("⛔ Pausing trading after 3 consecutive failures")
-                    self.is_active = False
-                
-                decision_log = {
-                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "action": "buy_failed",
-                    "amount": amount,
-                    "sentiment": score,
-                    "risk": risk,
-                    "error": str(e)
-                }
-                self.trade_history.append(decision_log)
-                self._log_to_file(decision_log)
-                
-                return {"action": "buy_failed", "reason": str(e)}
-        
-        elif final_decision == 'sell' and amount > 0:
-            print(f"\n📉 EXECUTING SELL: {amount * 100} USDC → CRO")  # Approximate conversion
-            try:
-                prompt = f"Execute swap {amount * 100} USDC to CRO via Sentinel. Check status first, then execute if safe."
-                response = self.agent.interact(prompt)
-                print(f"✅ Trade executed: {response[:200]}")
-                
-                # Log success
-                decision_log = {
-                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "action": "sell",
-                    "amount": amount * 100,
-                    "sentiment": score,
-                    "risk": risk,
-                    "reasoning": decision['reasoning_short'],
-                    "result": "success"
-                }
-                self.trade_history.append(decision_log)
-                self._log_to_file(decision_log)
-                
-                return {"action": "sell", "amount": amount * 100, "result": "success"}
-            
-            except Exception as e:
-                print(f"❌ Trade failed: {e}")
-                self.consecutive_losses += 1
-                if self.consecutive_losses >= 3:
-                    print("⛔ Pausing trading after 3 consecutive failures")
-                    self.is_active = False
-                
-                decision_log = {
-                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "action": "sell_failed",
-                    "amount": amount * 100,
-                    "sentiment": score,
-                    "risk": risk,
-                    "error": str(e)
-                }
-                self.trade_history.append(decision_log)
-                self._log_to_file(decision_log)
-                
-                return {"action": "sell_failed", "reason": str(e)}
-        
-        else:
-            print(f"💤 HOLD - Conditions not met (score: {score:.3f}, risk: {risk})")
+            # Log decision
             decision_log = {
                 "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                "action": "hold",
-                "sentiment": score,
-                "risk": risk,
-                "reasoning": decision['reasoning_short']
+                "signal": signal['signal'],
+                "strength": signal.get('strength', 0),
+                "sentiment_score": signal.get('avg_sentiment', 0),
+                "is_trending": signal.get('is_trending', False),
+                "agent_response": response[:500],  # Truncate for storage
             }
             self.trade_history.append(decision_log)
-            self._log_to_file(decision_log)
             
-            return {"action": "hold", "sentiment": score}
-    
-    def _log_to_file(self, decision_log: Dict):
-        """Log decision to file"""
-        with open("autonomous_trade_log.txt", "a") as f:
-            f.write(f"\n{'='*60}\n")
-            f.write(f"Time: {decision_log['timestamp']}\n")
-            f.write(f"Action: {decision_log.get('action', 'N/A')}\n")
-            f.write(f"Sentiment: {decision_log.get('sentiment', 0):.3f}\n")
-            f.write(f"Risk: {decision_log.get('risk', 'N/A')}\n")
-            if 'reasoning' in decision_log:
-                f.write(f"Reasoning: {decision_log['reasoning']}\n")
-            if 'result' in decision_log:
-                f.write(f"Result: {decision_log['result']}\n")
-            if 'error' in decision_log:
-                f.write(f"Error: {decision_log['error']}\n")
+            # Save to file
+            with open("autonomous_trade_log.txt", "a") as f:
+                f.write(f"\n{'='*60}\n")
+                f.write(f"Time: {decision_log['timestamp']}\n")
+                f.write(f"Signal: {decision_log['signal']} ({decision_log['strength']})\n")
+                f.write(f"Sentiment: {decision_log['sentiment_score']:.3f}\n")
+                f.write(f"Trending: {decision_log['is_trending']}\n")
+                f.write(f"Decision: {decision_log['agent_response']}\n")
+            
+            return decision_log
+            
+        except Exception as e:
+            print(f"\n❌ Decision Error: {e}")
+            return {"action": "error", "reason": str(e)}
     
     def run_forever(self):
         """
         Main loop - runs 24/7
-        Checks sentiment and makes trading decisions every 5 minutes
+        Checks sentiment and makes trading decisions every 15 minutes
         """
         print("\n🚀 Starting Autonomous Trading Agent...")
-        print("🔄 Monitoring Sentiment + Making Decisions Every 5 Minutes")
+        print("🔄 Monitoring Sentiment + Making Decisions Every 15 Minutes")
+        print("   (Reduced frequency to stay within experimental model limits)")
         print("⏹️  Press Ctrl+C to stop\n")
         
-        # Schedule decision-making task
-        schedule.every(5).minutes.do(self.make_trading_decision)
+        # Schedule decision-making task (15 min to avoid quota issues)
+        schedule.every(15).minutes.do(self.make_trading_decision)
         
         # Run first decision immediately
         self.make_trading_decision()
