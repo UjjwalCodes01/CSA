@@ -10,6 +10,7 @@ crypto-com-facilitator-client>=1.0.3
 # Autonomous Trading Dependencies
 vaderSentiment>=3.3.2
 schedule>=1.2.0
+feedparser>=6.0.10
 feedparser>=6.0.10  # NEW: For RSS parsing (CryptoPanic + Google News)
 
 # Additional dependencies

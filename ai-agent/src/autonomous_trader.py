@@ -82,28 +82,15 @@ class AutonomousTrader:
         all_tools = MARKET_DATA_TOOLS_PRO + SENTINEL_TOOLS + EXECUTIONER_TOOLS
         storage = SQLitePlugin(db_path="autonomous_agent.db")
         
-        gcp_project_id = os.getenv("GCP_PROJECT_ID")
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         
-        if gcp_project_id:
-            import vertexai
-            vertexai.init(project=gcp_project_id, location="us-central1")
-            
-            llm_config = {
-                "provider": Provider.GoogleGenAI,
-                "model": "gemini-2.0-flash-exp",  # Experimental model (has quota limits)
-                "provider-api-key": gemini_api_key,
-                "temperature": 0.3,  # Lower temperature for consistent decisions
-            }
-            print(f"   Using Vertex AI: {gcp_project_id}")
-        else:
-            llm_config = {
-                "provider": Provider.GoogleGenAI,
-                "model": "gemini-2.0-flash-exp",  # Experimental model (has quota limits)
-                "provider-api-key": gemini_api_key,
-                "temperature": 0.3,
-            }
-            print("   Using Gemini AI Studio")
+        llm_config = {
+            "provider": Provider.GoogleGenAI,
+            "model": "gemini-2.5-flash",
+            "provider-api-key": gemini_api_key,
+            "temperature": 0.3,
+        }
+        print("   Using Gemini AI Studio (gemini-2.5-flash)")
         
         agent = Agent.init(
             llm_config=llm_config,

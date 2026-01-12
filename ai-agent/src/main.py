@@ -91,12 +91,12 @@ def create_agent():
         # Configure SDK to use Gemini through Vertex AI billing
         llm_config = {
             "provider": Provider.GoogleGenAI,
-            "model": "gemini-2.0-flash-exp",  # Use model that works with both
+            "model": "gemini-2.5-flash",
             "provider-api-key": gemini_api_key,  # Still needed for SDK
             "temperature": 0.7,
         }
         print(f"🔧 Using Vertex AI: {gcp_project_id}")
-        print("   Model: gemini-2.0-flash-exp (GCP billing)")
+        print("   Model: gemini-2.5-flash (GCP billing)")
         
     elif gemini_api_key:
         llm_config = {

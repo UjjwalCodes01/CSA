@@ -22,7 +22,7 @@ class RealSentimentAnalyzer:
     def __init__(self):
         self.cryptopanic_rss = "https://cryptopanic.com/news/rss/"
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
     
     def get_cryptopanic_news(self, filter_keywords=None) -> List[Dict]:
         """
