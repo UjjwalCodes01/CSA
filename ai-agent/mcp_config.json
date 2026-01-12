@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sentinel-alpha": {
+      "command": "python",
+      "args": [
+        "C:/Users/DELL/OneDrive/Desktop/CSA/ai-agent/src/mcp_server.py"
+      ],
+      "env": {}
+    }
+  }
+  
+}

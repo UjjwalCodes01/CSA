@@ -43,7 +43,7 @@ CRITICAL SAFETY PROTOCOL (Execute in this exact order):
 
 2. IF strong_buy signal with strength >= 3:
    a) BALANCE CHECK: Call get_wallet_balances()
-      - Verify sufficient tUSD and TCRO for gas
+      - Verify sufficient WCRO and TCRO for gas
    
    b) AMOUNT CALCULATION: 
       - Max 0.5 WCRO (respects daily limit)
@@ -54,14 +54,16 @@ CRITICAL SAFETY PROTOCOL (Execute in this exact order):
       - If approved=False, STOP and log reason
       - If can_proceed=True, continue to step d
    
-   d) AUTONOMOUS EXECUTION: Call execute_wcro_swap(0.5, buy_wcro=True)
-      - Executes on-chain swap via Cronos EVM
+   d) AUTONOMOUS EXECUTION: Call execute_wcro_swap(0.5, buy_wcro=False)
+      - Executes WCRO -> tUSD swap on-chain via Cronos EVM
+      - buy_wcro=False means SELL WCRO (swap WCRO to tUSD)
       - Returns transaction hash
       - This is x402 programmatic payment in action
 
 3. IF strong_sell:
-   - Check WCRO holdings via get_wallet_balances()
-   - If WCRO > 0, autonomous exit via execute_wcro_swap()
+   - Already holding tUSD (stablecoin position)
+   - Strong sell = already safe, no action needed
+   - Log decision: "Position already in tUSD, no exit needed"
 
 4. IF hold/weak signal:
    - Log decision with CDC Exchange price data

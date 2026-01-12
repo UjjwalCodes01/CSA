@@ -4,6 +4,13 @@ Exposes trading tools via Model Context Protocol
 """
 import os
 import sys
+import warnings
+
+# Suppress third-party deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="httplib2")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="websockets")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="google")
+
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
@@ -210,12 +217,24 @@ def execute_wcro_swap(wcro_amount: float, buy_wcro: bool = True) -> dict:
         # Buying WCRO not directly implemented - would need reverse swap
         return {
             "status": "error",
-            "message": "Buying WCRO (tUSD -> WCRO) not yet implemented",
-            "tx_hash": None
+            "message": "Buying WCRO (tUSD -> WCRO) not yet implemented. Use buy_wcro=False to sell WCRO.",
+            "tx_hash": None,
+            "success": False
         }
     else:
         # Selling WCRO for tUSD
-        return swap_wcro_to_tusd(wcro_amount)
+        result = swap_wcro_to_tusd(wcro_amount)
+        
+        # Ensure consistent return format for MCP
+        return {
+            "status": "success" if result.get("success") else "error",
+            "message": f"Swapped {wcro_amount} WCRO to tUSD" if result.get("success") else result.get("error", "Unknown error"),
+            "tx_hash": result.get("tx_hash"),
+            "success": result.get("success", False),
+            "amount_in": result.get("amount_in"),
+            "expected_out": result.get("expected_out"),
+            "gas_used": result.get("gas_used")
+        }
 
 
 @mcp.tool()
