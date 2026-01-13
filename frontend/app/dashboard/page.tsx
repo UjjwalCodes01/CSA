@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { Vortex } from "@/components/ui/vortex";
 import Image from "next/image";
 import Link from "next/link";
+import { useAccount } from "wagmi";
+import toast from "react-hot-toast";
 import {
   Activity,
   AlertTriangle,
@@ -41,7 +43,6 @@ import {
   Cell,
 } from "recharts";
 import {
-  mockData,
   type MarketIntelligence,
   type CROPrice,
   type PoolStatus,
@@ -49,7 +50,12 @@ import {
   type SentinelStatus,
   type AgentStatus,
   type TradeDecision,
+  type AgentDecision,
 } from "@/lib/api";
+import { useWebSocket, useEmergencyStop } from "@/lib/websocket";
+import { useSentinelStatus, useWCROBalance, useTCROBalance } from "@/lib/contract-hooks";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 // TradingView Widget Component
 function TradingViewWidget() {
@@ -202,49 +208,292 @@ function SentimentGauge({ value, signal }: { value: number; signal: string }) {
 }
 
 export default function Dashboard() {
-  // State
-  const [isLoading, setIsLoading] = useState(true);
+  // Wallet connection
+  const { address, isConnected } = useAccount();
+  
+  // WebSocket for real-time updates
+  const { 
+    isConnected: wsConnected, 
+    agentStatus: wsAgentStatus, 
+    recentTrades: wsTrades, 
+    sentiment: wsSentiment 
+  } = useWebSocket();
+  
+  // Emergency stop hook
+  const { emergencyStop } = useEmergencyStop();
+  
+  // Contract hooks for on-chain data
+  const sentinelData = useSentinelStatus();
+  const wcroBalance = useWCROBalance(address);
+  const tcroBalance = useTCROBalance(address);
+  
+  // State - Initialize with empty/zero values, load from backend
+  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [marketIntel, setMarketIntel] = useState<MarketIntelligence>(mockData.marketIntelligence);
-  const [croPrice, setCroPrice] = useState<CROPrice>(mockData.croPrice);
-  const [poolStatus, setPoolStatus] = useState<PoolStatus>(mockData.poolStatus);
-  const [walletBalances, setWalletBalances] = useState<WalletBalances>(mockData.walletBalances);
-  const [sentinelStatus, setSentinelStatus] = useState<SentinelStatus>(mockData.sentinelStatus);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>(mockData.agentStatus);
-  const [tradeHistory, setTradeHistory] = useState<TradeDecision[]>(mockData.tradeHistory);
-  const [sentimentHistory, setSentimentHistory] = useState(mockData.sentimentHistory);
+  const [marketIntel, setMarketIntel] = useState<MarketIntelligence>({
+    signal: 'hold',
+    sentiment: 0,
+    strength: 0,
+    sources: 0,
+    timestamp: new Date().toISOString(),
+  });
+  const [croPrice, setCroPrice] = useState<CROPrice>({
+    price: 0,
+    change_24h: 0,
+    volume_24h: 0,
+    high_24h: 0,
+    low_24h: 0,
+  });
+  const [poolStatus, setPoolStatus] = useState<PoolStatus>({
+    wcro_balance: 0,
+    tusd_balance: 0,
+    price: 0,
+    tvl_usd: 0,
+  });
+  const [walletBalances, setWalletBalances] = useState<WalletBalances>({
+    CRO: 0,
+    USDC: 0,
+    totalValue: 0,
+  });
+  const [sentinelStatus, setSentinelStatus] = useState<SentinelStatus>({
+    daily_limit: 0,
+    spent_today: 0,
+    remaining: 0,
+    can_trade: false,
+  });
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>({
+    is_running: false,
+    last_cycle: new Date().toISOString(),
+    total_cycles: 0,
+    next_cycle_in: 0,
+  });
+  const [tradeHistory, setTradeHistory] = useState<TradeDecision[]>([]);
+  const [sentimentHistory, setSentimentHistory] = useState<any[]>(() => {
+    // Generate dummy sentiment data for last 24 hours
+    const now = new Date();
+    const dummyData = [];
+    for (let i = 23; i >= 0; i--) {
+      const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
+      dummyData.push({
+        hour: hour.getHours() + ':00',
+        sentiment: 0.45 + Math.random() * 0.3, // Random sentiment between 0.45-0.75
+        timestamp: hour.toISOString()
+      });
+    }
+    return dummyData;
+  });
+  const [agentDecisions, setAgentDecisions] = useState<AgentDecision[]>([]);
   const [isEmergencyStopping, setIsEmergencyStopping] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
-
-  // Load data function
+  
+  // Update wallet balances from contract hooks
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Wallet Debug:', {
+        isConnected,
+        address,
+        wcroBalance: wcroBalance.balance,
+        tcroBalance: tcroBalance.balance,
+      });
+    }
+    
+    if (isConnected && address) {
+      const wcro = parseFloat(wcroBalance.balance || '0');
+      const tcro = parseFloat(tcroBalance.balance || '0');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Setting balances:', { wcro, tcro });
+      }
+      setWalletBalances({
+        CRO: wcro,
+        USDC: tcro,
+        totalValue: wcro + tcro,
+      });
+    }
+  }, [wcroBalance.balance, tcroBalance.balance, isConnected, address]);
+  
+  // Fetch pool status from backend
+  useEffect(() => {
+    const fetchPoolStatus = async () => {
+      if (!API_BASE) return;
+      try {
+        const res = await fetch(`${API_BASE}/market/pool`);
+        if (res.ok) {
+          const data = await res.json();
+          setPoolStatus({
+            wcro_balance: parseFloat(data.wcro_balance) || 0,
+            tusd_balance: parseFloat(data.tusd_balance) || 0,
+            price: parseFloat(data.price) || 0,
+            tvl_usd: parseFloat(data.tvl_usd) || 0,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch pool status:', error);
+      }
+    };
+    
+    fetchPoolStatus();
+    const interval = setInterval(fetchPoolStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Update sentinel status from contract
+  useEffect(() => {
+    if (sentinelData.dailyLimit && sentinelData.dailySpent !== undefined) {
+      setSentinelStatus(prev => ({
+        ...prev,
+        is_active: sentinelData.canTrade,
+        daily_limit: parseFloat(sentinelData.dailyLimit),
+        daily_spent: parseFloat(sentinelData.dailySpent),
+        remaining_limit: parseFloat(sentinelData.remainingLimit),
+        total_transactions: sentinelData.totalTransactions,
+        x402_transactions: sentinelData.x402Transactions,
+      }));
+    }
+  }, [sentinelData.dailyLimit, sentinelData.dailySpent, sentinelData.remainingLimit, sentinelData.totalTransactions, sentinelData.x402Transactions, sentinelData.canTrade]);
+  
+  // Update from WebSocket
+  useEffect(() => {
+    if (wsAgentStatus && wsAgentStatus.lastUpdate) {
+      setAgentStatus(prev => ({
+        ...prev,
+        is_running: wsAgentStatus.status !== 'idle',
+        current_action: wsAgentStatus.currentAction || 'Monitoring markets',
+        last_trade_time: wsAgentStatus.lastUpdate,
+        confidence_threshold: wsAgentStatus.confidence || 0.7,
+      }));
+    }
+  }, [wsAgentStatus?.status, wsAgentStatus?.currentAction, wsAgentStatus?.lastUpdate, wsAgentStatus?.confidence]);
+  
+  // Update trade history from WebSocket
+  useEffect(() => {
+    if (wsTrades && wsTrades.length > 0) {
+      const newTrades = wsTrades.map(trade => ({
+        id: trade.id || trade.txHash || '',
+        timestamp: trade.timestamp,
+        action: (trade.type || 'hold').toLowerCase() as 'buy' | 'sell' | 'hold',
+        amount: parseFloat(trade.amountIn || '0'),
+        price: parseFloat(trade.price || '0'),
+        sentiment_score: trade.sentiment || 0,
+        confidence: 0.85,
+        profit_loss: 0,
+        gas_cost_usd: 0.001,
+        tx_hash: trade.txHash,
+        reason: `${trade.type || 'TRADE'} ${trade.amountIn || '0'} ${trade.tokenIn || ''} → ${trade.tokenOut || ''}`,
+      }));
+      setTradeHistory(newTrades);
+    }
+  }, [wsTrades?.length]);
+  
+  // Update sentiment from WebSocket
+  useEffect(() => {
+    if (wsSentiment && wsSentiment.timestamp) {
+      setSentimentHistory(prev => {
+        const lastEntry = prev[prev.length - 1];
+        if (lastEntry?.timestamp === wsSentiment.timestamp) return prev;
+        
+        return [
+          ...prev.slice(-23),
+          {
+            timestamp: wsSentiment.timestamp,
+            score: wsSentiment.score,
+            reddit: wsSentiment.sources.reddit,
+            twitter: wsSentiment.sources.twitter,
+            news: wsSentiment.sources.news,
+          }
+        ];
+      });
+      setMarketIntel(prev => ({
+        ...prev,
+        overall_sentiment: wsSentiment.score,
+        reddit_sentiment: wsSentiment.sources.reddit,
+        twitter_sentiment: wsSentiment.sources.twitter,
+        news_sentiment: wsSentiment.sources.news,
+      }));
+    }
+  }, [wsSentiment?.timestamp, wsSentiment?.score]);
+  
+  // Load data from backend API
   const loadData = async () => {
+    if (!API_BASE) return;
+    
     setIsRefreshing(true);
-    // In production, replace with actual API calls
-    // For now, using mock data
-    await new Promise((r) => setTimeout(r, 800));
-    setIsRefreshing(false);
-    setLastUpdate(new Date());
+    try {
+      // Fetch market price
+      const priceRes = await fetch(`${API_BASE}/market/price`);
+      if (priceRes.ok) {
+        const priceData = await priceRes.json();
+        setCroPrice({
+          price: parseFloat(priceData.price) || 0,
+          change_24h: parseFloat(priceData.change24h) || 0,
+          volume_24h: parseFloat(priceData.volume_24h) || 0,
+          high_24h: parseFloat(priceData.high_24h) || 0,
+          low_24h: parseFloat(priceData.low_24h) || 0,
+        });
+      }
+      
+      // Fetch sentiment
+      const sentimentRes = await fetch(`${API_BASE}/market/sentiment`);
+      if (sentimentRes.ok) {
+        const sentData = await sentimentRes.json();
+        setMarketIntel(prev => ({
+          ...prev,
+          signal: sentData.signal || 'hold',
+          sentiment: parseFloat(sentData.score) || 0,
+          sources: sentData.sources?.length || 0,
+          timestamp: sentData.timestamp || new Date().toISOString(),
+        }));
+      }
+      
+      // Fetch trade history
+      const tradesRes = await fetch(`${API_BASE}/trades/history`);
+      if (tradesRes.ok) {
+        const tradesData = await tradesRes.json();
+        if (tradesData.trades) {
+          setTradeHistory(tradesData.trades);
+        }
+      }
+      
+      // Fetch agent decisions
+      const decisionsRes = await fetch(`${API_BASE}/agent/decisions`);
+      if (decisionsRes.ok) {
+        const decisionsData = await decisionsRes.json();
+        if (decisionsData.decisions) {
+          setAgentDecisions(decisionsData.decisions);
+        }
+      }
+      
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
-  // Initial load only (no auto-refresh)
+  // Auto-refresh data every 30 seconds
   useEffect(() => {
-    const initialLoad = async () => {
-      setIsLoading(true);
-      await new Promise((r) => setTimeout(r, 1000));
-      setIsLoading(false);
-      setLastUpdate(new Date());
-    };
-    initialLoad();
-  }, []);
+    loadData(); // Initial load
+    
+    const interval = setInterval(() => {
+      loadData();
+    }, 30000); // 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [address]);
 
-  // Emergency stop handler
+  // Initial load only (no auto-refresh) - removed to fix hydration
+  // Data loads from mock immediately, no loading state needed
+
+  // Emergency stop handler - stops trading but keeps monitoring
   const handleEmergencyStop = async () => {
     setIsEmergencyStopping(true);
+    emergencyStop();
+    toast.error('Emergency Stop: Trading halted, monitoring continues');
     await new Promise((r) => setTimeout(r, 1500));
     setAgentStatus((prev) => ({ ...prev, is_running: false }));
     setIsEmergencyStopping(false);
   };
-
+  
   // Format time
   const formatTime = (date: string | Date) => {
     return new Date(date).toLocaleTimeString("en-US", {
@@ -258,17 +507,6 @@ export default function Dashboard() {
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-cyan-500 mx-auto mb-4" />
-          <p className="text-gray-400">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -302,6 +540,29 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Agent Status Indicator */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-full">
+                <div className={`w-2 h-2 rounded-full ${agentStatus.is_running ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                <span className="text-xs text-gray-400">
+                  {agentStatus.is_running ? 'Agent Running' : 'Agent Stopped'}
+                </span>
+              </div>
+              
+              {/* WebSocket Status (if connected to backend) */}
+              {wsConnected && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/30 backdrop-blur-sm border border-blue-500/30 rounded-full">
+                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                  <span className="text-xs text-blue-400">Live Data</span>
+                </div>
+              )}
+              
+              {isConnected && address && (
+                <div className="px-4 py-2 bg-green-900/30 backdrop-blur-sm border border-green-500/30 rounded-full">
+                  <p className="text-green-400 text-xs font-mono">
+                    {address.slice(0, 6)}...{address.slice(-4)}
+                  </p>
+                </div>
+              )}
               <div className="text-sm text-gray-400">
                 Last update: {formatTime(lastUpdate)}
               </div>
@@ -348,7 +609,7 @@ export default function Dashboard() {
               </div>
               <SentimentGauge value={marketIntel.sentiment} signal={marketIntel.signal} />
               <div className="text-center mt-2 text-sm text-gray-400">
-                {marketIntel.strength}/4 sources confirming
+                {marketIntel.sources || 0}/4 sources confirming
               </div>
             </div>
 
@@ -380,15 +641,15 @@ export default function Dashboard() {
                 <span className="text-gray-400 text-sm">Sentinel Limit</span>
                 <Shield className="w-5 h-5 text-purple-400" />
               </div>
-              <div className="text-3xl font-bold">{sentinelStatus.remaining.toFixed(2)} CRO</div>
+              <div className="text-3xl font-bold">{sentinelStatus.remaining_limit?.toFixed(2) || '0.00'} CRO</div>
               <div className="w-full bg-gray-700 rounded-full h-2 mt-3">
                 <div
                   className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full"
-                  style={{ width: `${(sentinelStatus.remaining / sentinelStatus.daily_limit) * 100}%` }}
+                  style={{ width: `${((sentinelStatus.remaining_limit || 0) / (sentinelStatus.daily_limit || 1)) * 100}%` }}
                 />
               </div>
               <div className="text-sm text-gray-400 mt-2">
-                {sentinelStatus.spent_today.toFixed(2)} / {sentinelStatus.daily_limit.toFixed(2)} used today
+                {sentinelStatus.daily_spent?.toFixed(2) || '0.00'} / {sentinelStatus.daily_limit?.toFixed(2) || '0.00'} used today
               </div>
             </div>
           </div>
@@ -489,28 +750,28 @@ export default function Dashboard() {
               
               <div className="space-y-3">
                 <div className="flex justify-between items-center p-3 bg-gray-800/50 rounded-lg">
-                  <span className="text-gray-300">TCRO</span>
-                  <span className="font-mono font-semibold text-cyan-400">
-                    {walletBalances.tcro.toFixed(4)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-gray-800/50 rounded-lg">
                   <span className="text-gray-300">WCRO</span>
-                  <span className="font-mono font-semibold text-blue-400">
-                    {walletBalances.wcro.toFixed(4)}
+                  <span className="font-mono font-semibold text-cyan-400">
+                    {walletBalances.CRO?.toFixed(4) || '0.0000'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-gray-800/50 rounded-lg">
-                  <span className="text-gray-300">tUSD</span>
+                  <span className="text-gray-300">TCRO</span>
                   <span className="font-mono font-semibold text-green-400">
-                    {walletBalances.tusd.toFixed(2)}
+                    {walletBalances.USDC?.toFixed(4) || '0.0000'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-gray-800/50 rounded-lg">
+                  <span className="text-gray-300">Total Value</span>
+                  <span className="font-mono font-semibold text-blue-400">
+                    ${walletBalances.totalValue?.toFixed(2) || '0.00'}
                   </span>
                 </div>
               </div>
               
               <div className="mt-4 pt-4 border-t border-gray-700">
                 <div className="text-xs text-gray-500 truncate">
-                  {walletBalances.wallet_address}
+                  {address || 'Not connected'}
                 </div>
               </div>
             </div>
@@ -553,29 +814,29 @@ export default function Dashboard() {
                               : "bg-gray-500/20 text-gray-400"
                           }`}
                         >
-                          {trade.action.toUpperCase()}
+                          {(trade.action || 'hold').toUpperCase()}
                         </span>
                       </td>
                       <td className="py-3 pr-4 font-mono">
-                        {trade.amount > 0 ? `${trade.amount.toFixed(2)} WCRO` : "-"}
+                        {(trade.amount || 0) > 0 ? `${(trade.amount || 0).toFixed(2)} WCRO` : "-"}
                       </td>
-                      <td className="py-3 pr-4 font-mono">${trade.price.toFixed(4)}</td>
+                      <td className="py-3 pr-4 font-mono">${(trade.price || 0).toFixed(4)}</td>
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-2">
                           <div className="w-16 bg-gray-700 rounded-full h-2">
                             <div
                               className="bg-cyan-500 h-2 rounded-full"
-                              style={{ width: `${trade.confidence * 100}%` }}
+                              style={{ width: `${(trade.confidence || 0) * 100}%` }}
                             />
                           </div>
-                          <span className="text-sm">{(trade.confidence * 100).toFixed(0)}%</span>
+                          <span className="text-sm">{((trade.confidence || 0) * 100).toFixed(0)}%</span>
                         </div>
                       </td>
                       <td className="py-3 pr-4 text-sm text-gray-400">
-                        {trade.gas_cost_usd > 0 ? `$${trade.gas_cost_usd.toFixed(3)}` : "-"}
+                        {(trade.gas_cost_usd || 0) > 0 ? `$${(trade.gas_cost_usd || 0).toFixed(3)}` : "-"}
                       </td>
                       <td className="py-3 pr-4 text-sm text-gray-400 max-w-xs truncate">
-                        {trade.reason}
+                        {trade.reason || '-'}
                       </td>
                       <td className="py-3">
                         {trade.tx_hash ? (
@@ -595,6 +856,68 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
+              {tradeHistory.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  No trades yet. Agent will execute trades automatically when conditions are favorable.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Agent Decision Log */}
+          <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-800">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <Bot className="w-5 h-5 text-purple-400" />
+              Agent Decision Log
+            </h3>
+            
+            <div className="space-y-4 max-h-[400px] overflow-y-auto">
+              {agentDecisions.length > 0 ? (
+                agentDecisions.map((decision, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-gray-800/50 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs text-gray-400">
+                        {new Date(decision.timestamp).toLocaleString()}
+                      </span>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          decision.decision.includes("BUY")
+                            ? "bg-green-500/20 text-green-400"
+                            : decision.decision.includes("SELL")
+                            ? "bg-red-500/20 text-red-400"
+                            : "bg-gray-500/20 text-gray-400"
+                        }`}
+                      >
+                        {decision.decision}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="text-gray-400">Market Data: </span>
+                        <span className="text-gray-200">{decision.market_data}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Sentinel Status: </span>
+                        <span className="text-gray-200">{decision.sentinel_status}</span>
+                      </div>
+                      <div className="pt-2 border-t border-gray-700">
+                        <span className="text-gray-400">Reason: </span>
+                        <span className="text-gray-200">{decision.reason}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Bot className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No agent decisions yet.</p>
+                  <p className="text-sm mt-1">Start the AI agent to see decision logs here.</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -619,27 +942,27 @@ export default function Dashboard() {
                           : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
                       }`}
                     >
-                      {tradeHistory[0].action.toUpperCase()}
+                      {(tradeHistory[0].action || 'hold').toUpperCase()}
                     </span>
                     <span className="text-gray-400 text-sm">
                       {formatTime(tradeHistory[0].timestamp)}
                     </span>
                   </div>
                   
-                  <p className="text-gray-300">{tradeHistory[0].reason}</p>
+                  <p className="text-gray-300">{tradeHistory[0].reason || 'No reason provided'}</p>
                   
                   <div className="grid grid-cols-3 gap-4 pt-3 border-t border-gray-700">
                     <div>
                       <div className="text-gray-500 text-xs">Sentiment</div>
-                      <div className="font-semibold">{(tradeHistory[0].sentiment_score * 100).toFixed(0)}%</div>
+                      <div className="font-semibold">{((tradeHistory[0].sentiment_score || 0) * 100).toFixed(0)}%</div>
                     </div>
                     <div>
                       <div className="text-gray-500 text-xs">Confidence</div>
-                      <div className="font-semibold">{(tradeHistory[0].confidence * 100).toFixed(0)}%</div>
+                      <div className="font-semibold">{((tradeHistory[0].confidence || 0) * 100).toFixed(0)}%</div>
                     </div>
                     <div>
                       <div className="text-gray-500 text-xs">Gas Cost</div>
-                      <div className="font-semibold">${tradeHistory[0].gas_cost_usd.toFixed(3)}</div>
+                      <div className="font-semibold">${(tradeHistory[0].gas_cost_usd || 0).toFixed(3)}</div>
                     </div>
                   </div>
                 </div>
@@ -685,7 +1008,7 @@ export default function Dashboard() {
                 </div>
                 
                 <div className="text-xs text-gray-500 text-center">
-                  Agent status is simulated for demo purposes
+                  Control the autonomous AI trading agent
                 </div>
               </div>
             </div>

@@ -17,6 +17,7 @@
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-hot-toast": "^2.6.0",
     "recharts": "^3.6.0",
     "simplex-noise": "^4.0.3",
     "swr": "^2.3.8",

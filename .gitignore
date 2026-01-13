@@ -1,0 +1,16 @@
+# CSA - Autonomous Trading System
+
+.env
+*.env
+.env.local
+.env.production
+node_modules/
+.DS_Store
+*.log
+dist/
+build/
+.cache/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
