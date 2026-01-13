@@ -339,17 +339,14 @@ export default function Dashboard() {
   // Update sentinel status from contract
   useEffect(() => {
     if (sentinelData.dailyLimit && sentinelData.dailySpent !== undefined) {
-      setSentinelStatus(prev => ({
-        ...prev,
-        is_active: sentinelData.canTrade,
+      setSentinelStatus({
         daily_limit: parseFloat(sentinelData.dailyLimit),
-        daily_spent: parseFloat(sentinelData.dailySpent),
-        remaining_limit: parseFloat(sentinelData.remainingLimit),
-        total_transactions: sentinelData.totalTransactions,
-        x402_transactions: sentinelData.x402Transactions,
-      }));
+        spent_today: parseFloat(sentinelData.dailySpent),
+        remaining: parseFloat(sentinelData.remainingLimit),
+        can_trade: sentinelData.canTrade,
+      });
     }
-  }, [sentinelData.dailyLimit, sentinelData.dailySpent, sentinelData.remainingLimit, sentinelData.totalTransactions, sentinelData.x402Transactions, sentinelData.canTrade]);
+  }, [sentinelData.dailyLimit, sentinelData.dailySpent, sentinelData.remainingLimit, sentinelData.canTrade]);
   
   // Update from WebSocket
   useEffect(() => {
@@ -641,15 +638,15 @@ export default function Dashboard() {
                 <span className="text-gray-400 text-sm">Sentinel Limit</span>
                 <Shield className="w-5 h-5 text-purple-400" />
               </div>
-              <div className="text-3xl font-bold">{sentinelStatus.remaining_limit?.toFixed(2) || '0.00'} CRO</div>
+              <div className="text-3xl font-bold">{sentinelStatus.remaining?.toFixed(2) || '0.00'} CRO</div>
               <div className="w-full bg-gray-700 rounded-full h-2 mt-3">
                 <div
                   className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full"
-                  style={{ width: `${((sentinelStatus.remaining_limit || 0) / (sentinelStatus.daily_limit || 1)) * 100}%` }}
+                  style={{ width: `${((sentinelStatus.remaining || 0) / (sentinelStatus.daily_limit || 1)) * 100}%` }}
                 />
               </div>
               <div className="text-sm text-gray-400 mt-2">
-                {sentinelStatus.daily_spent?.toFixed(2) || '0.00'} / {sentinelStatus.daily_limit?.toFixed(2) || '0.00'} used today
+                {sentinelStatus.spent_today?.toFixed(2) || '0.00'} / {sentinelStatus.daily_limit?.toFixed(2) || '0.00'} used today
               </div>
             </div>
           </div>
