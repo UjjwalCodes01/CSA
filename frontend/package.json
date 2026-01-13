@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.16",
     "axios": "^1.13.2",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
@@ -19,7 +20,9 @@
     "recharts": "^3.6.0",
     "simplex-noise": "^4.0.3",
     "swr": "^2.3.8",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "viem": "^2.44.2",
+    "wagmi": "^3.3.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
