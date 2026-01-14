@@ -33,10 +33,17 @@ export interface SentimentUpdate {
   timestamp: string;
 }
 
+export interface AgentThinking {
+  type: 'analysis' | 'decision' | 'trade' | 'warning' | 'info';
+  message: string;
+  timestamp: string;
+}
+
 type WebSocketMessage =
   | { type: 'agent_status'; data: AgentStatus }
   | { type: 'trade_event'; data: TradeEvent }
   | { type: 'sentiment_update'; data: SentimentUpdate }
+  | { type: 'ai_thinking'; data: AgentThinking }
   | { type: 'error'; message: string };
 
 export function useWebSocket() {
@@ -47,6 +54,7 @@ export function useWebSocket() {
   });
   const [recentTrades, setRecentTrades] = useState<TradeEvent[]>([]);
   const [sentiment, setSentiment] = useState<SentimentUpdate | null>(null);
+  const [thinkingLog, setThinkingLog] = useState<AgentThinking[]>([]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
@@ -93,6 +101,13 @@ export function useWebSocket() {
 
             case 'sentiment_update':
               setSentiment(message.data);
+              break;
+
+            case 'ai_thinking':
+              setThinkingLog((prev) => [{
+                ...message.data,
+                timestamp: message.data.timestamp || new Date().toISOString()
+              }, ...prev.slice(0, 49)]);
               break;
 
             case 'agent_decision':
@@ -174,6 +189,7 @@ export function useWebSocket() {
     agentStatus,
     recentTrades,
     sentiment,
+    thinkingLog,
     sendMessage,
     reconnect: connect,
   };

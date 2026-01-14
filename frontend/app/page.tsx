@@ -1,6 +1,6 @@
 'use client'
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Vortex } from "@/components/ui/vortex";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
@@ -10,6 +10,12 @@ export default function LandingPage() {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
+  const [mounted, setMounted] = useState(false);
+
+  // Prevent hydration mismatch by only rendering wallet UI after client mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleConnect = async () => {
     try {
@@ -49,7 +55,7 @@ export default function LandingPage() {
         </p>
         
         {/* Wallet Connection Status */}
-        {isConnected && address && (
+        {mounted && isConnected && address && (
           <div className="mt-6 px-6 py-3 bg-green-900/30 backdrop-blur-sm border border-green-500/30 rounded-full">
             <p className="text-green-400 text-sm font-mono">
               Connected: {address.slice(0, 6)}...{address.slice(-4)}
@@ -58,7 +64,12 @@ export default function LandingPage() {
         )}
 
         <div className="flex flex-col sm:flex-row items-center gap-6 mt-10">
-          {!isConnected ? (
+          {!mounted ? (
+            // Show loading state during hydration
+            <button className="px-8 py-3 bg-gray-600 rounded-full text-white font-semibold cursor-wait">
+              Loading...
+            </button>
+          ) : !isConnected ? (
             <button 
               onClick={handleConnect}
               className="group relative px-8 py-3 bg-indigo-600 hover:bg-indigo-700 transition duration-200 rounded-full text-white font-semibold shadow-lg shadow-indigo-500/30"

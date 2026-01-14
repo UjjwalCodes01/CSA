@@ -4,12 +4,37 @@ Uses FastMCP to expose tools to Gemini for true autonomous decision-making
 """
 import os
 import asyncio
+import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from fastmcp import Client
 from google import genai
 
 load_dotenv()
+
+# Backend integration
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3001")
+
+# Trading configuration
+MODE = os.getenv("AGENT_MODE", "demo")  # Options: "test" (1min), "demo" (2min), "production" (15min)
+
+CYCLE_TIMES = {
+    "test": 60,        # 1 minute - rapid testing
+    "demo": 120,       # 2 minutes - hackathon demos  
+    "production": 900  # 15 minutes - real trading
+}
+
+CYCLE_INTERVAL = CYCLE_TIMES.get(MODE, 120)  # Default to demo mode
+
+
+def send_to_backend(endpoint: str, data: dict):
+    """Send data to backend for dashboard display"""
+    try:
+        response = requests.post(f"{BACKEND_URL}/api/{endpoint}", json=data, timeout=5)
+        return response.ok
+    except Exception as e:
+        print(f"⚠️  Backend connection failed: {e}")
+        return False
 
 # Autonomous Agent Prompt
 AUTONOMOUS_PROMPT = """You are the Sentinel Alpha x402 AI Agent - an autonomous finance agent for Cronos EVM.
@@ -88,7 +113,14 @@ async def run_autonomous_cycle():
     """Run one autonomous trading decision cycle"""
     print("\n" + "="*60)
     print(f"🤖 AUTONOMOUS AGENT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"⏱️  Mode: {MODE.upper()} ({CYCLE_INTERVAL}s intervals)")
     print("="*60)
+    
+    # Send thinking: Starting analysis
+    send_to_backend("agent/thinking", {
+        "type": "analysis",
+        "message": "🚀 Autonomous cycle started - connecting to MCP tools..."
+    })
     
     # Connect to MCP server - use absolute path
     server_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server.py"))
@@ -99,6 +131,11 @@ async def run_autonomous_cycle():
         tools = await mcp_client.list_tools()
         print(f"📡 Tools available: {len(tools)} tools\n")
         
+        send_to_backend("agent/thinking", {
+            "type": "info",
+            "message": f"✅ Connected to MCP - {len(tools)} tools available"
+        })
+        
         # Initialize Gemini with MCP tools
         gemini = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         
@@ -106,6 +143,11 @@ async def run_autonomous_cycle():
         prompt = AUTONOMOUS_PROMPT.format(time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         
         print("🧠 Gemini analyzing market with MCP tools...\n")
+        
+        send_to_backend("agent/thinking", {
+            "type": "analysis",
+            "message": "🧠 Gemini 2.5-flash analyzing market conditions..."
+        })
         
         # Let Gemini make the decision using MCP tools
         response = await gemini.aio.models.generate_content(
@@ -117,25 +159,48 @@ async def run_autonomous_cycle():
             )
         )
         
+        decision_text = response.text
         print("🤖 Agent Decision:")
         print("-" * 60)
-        print(response.text)
+        print(decision_text)
         print("-" * 60)
+        
+        # Parse decision and send to backend
+        action = "hold"  # Default
+        if "execute_wcro_swap" in decision_text.lower() or "executing swap" in decision_text.lower():
+            action = "sell" if "buy_wcro=false" in decision_text.lower() else "buy"
+        
+        # Send final decision to backend
+        send_to_backend("agent/decision", {
+            "action": action,
+            "amount": 0.5 if action != "hold" else None,
+            "confidence": 0.7,
+            "reason": decision_text[:200],  # First 200 chars
+            "sentiment_score": 0.5
+        })
+        
+        send_to_backend("agent/thinking", {
+            "type": "decision",
+            "message": f"🎯 Decision: {action.upper()} - {decision_text[:100]}..."
+        })
         
         # Log decision
         with open("autonomous_trade_log.txt", "a") as f:
             f.write(f"\n{'='*60}\n")
             f.write(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Decision:\n{response.text}\n")
+            f.write(f"Mode: {MODE} ({CYCLE_INTERVAL}s)\n")
+            f.write(f"Decision:\n{decision_text}\n")
         
-        return response.text
+        return decision_text
 
 
 async def run_forever():
     """Run autonomous agent in continuous loop"""
     print("\n🚀 Starting Sentinel Alpha Autonomous Agent")
     print("🔌 Using Model Context Protocol (MCP)")
-    print("🔄 Decision cycle: Every 15 minutes")
+    print(f"⏱️  Mode: {MODE.upper()}")
+    print(f"🔄 Decision cycle: Every {CYCLE_INTERVAL} seconds ({CYCLE_INTERVAL//60} minutes)")
+    print(f"🌐 Backend: {BACKEND_URL}")
     print("⏹️  Press Ctrl+C to stop\n")
     
     cycle_count = 0
@@ -145,19 +210,36 @@ async def run_forever():
             cycle_count += 1
             print(f"\n🔄 Cycle {cycle_count}")
             
+            send_to_backend("agent/thinking", {
+                "type": "info",
+                "message": f"🔄 Starting cycle #{cycle_count}..."
+            })
+            
             try:
                 await run_autonomous_cycle()
             except Exception as e:
                 print(f"❌ Error in cycle {cycle_count}: {e}")
+                send_to_backend("agent/thinking", {
+                    "type": "warning",
+                    "message": f"❌ Error in cycle: {str(e)[:100]}"
+                })
             
-            # Wait 15 minutes before next decision
-            print(f"\n⏳ Waiting 15 minutes until next cycle...")
-            await asyncio.sleep(900)  # 15 minutes
+            # Wait for next cycle
+            print(f"\n⏳ Waiting {CYCLE_INTERVAL} seconds until next cycle...")
+            send_to_backend("agent/thinking", {
+                "type": "info",
+                "message": f"⏳ Next cycle in {CYCLE_INTERVAL}s ({CYCLE_INTERVAL//60} min)"
+            })
+            await asyncio.sleep(CYCLE_INTERVAL)
             
     except KeyboardInterrupt:
         print("\n\n⏹️  Stopping Autonomous Agent...")
         print(f"📊 Total cycles completed: {cycle_count}")
         print("✅ Shutdown complete")
+        send_to_backend("agent/thinking", {
+            "type": "warning",
+            "message": f"⏹️  Agent stopped - {cycle_count} cycles completed"
+        })
 
 
 async def test_single_decision():

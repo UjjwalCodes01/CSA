@@ -216,7 +216,8 @@ export default function Dashboard() {
     isConnected: wsConnected, 
     agentStatus: wsAgentStatus, 
     recentTrades: wsTrades, 
-    sentiment: wsSentiment 
+    sentiment: wsSentiment,
+    thinkingLog: wsThinkingLog
   } = useWebSocket();
   
   // Emergency stop hook
@@ -284,7 +285,25 @@ export default function Dashboard() {
   });
   const [agentDecisions, setAgentDecisions] = useState<AgentDecision[]>([]);
   const [isEmergencyStopping, setIsEmergencyStopping] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [agentThinkingLog, setAgentThinkingLog] = useState<Array<{
+    timestamp: string;
+    type: 'analysis' | 'decision' | 'trade' | 'warning' | 'info';
+    message: string;
+  }>>([]);
+  
+  // Add thinking log entry
+  const addThinkingLog = (type: 'analysis' | 'decision' | 'trade' | 'warning' | 'info', message: string) => {
+    setAgentThinkingLog(prev => {
+      const newLog = [{
+        timestamp: new Date().toISOString(),
+        type,
+        message
+      }, ...prev].slice(0, 50); // Keep last 50 entries
+      return newLog;
+    });
+  };
   
   // Update wallet balances from contract hooks
   useEffect(() => {
@@ -356,7 +375,7 @@ export default function Dashboard() {
     if (wsAgentStatus && wsAgentStatus.lastUpdate) {
       setAgentStatus(prev => ({
         ...prev,
-        is_running: wsAgentStatus.status !== 'idle',
+        is_running: wsAgentStatus.status !== 'stopped' && wsAgentStatus.status !== 'idle',
         current_action: wsAgentStatus.currentAction || 'Monitoring markets',
         last_trade_time: wsAgentStatus.lastUpdate,
         confidence_threshold: wsAgentStatus.confidence || 0.7,
@@ -411,6 +430,13 @@ export default function Dashboard() {
       }));
     }
   }, [wsSentiment?.timestamp, wsSentiment?.score]);
+  
+  // Update thinking log from WebSocket
+  useEffect(() => {
+    if (wsThinkingLog && wsThinkingLog.length > 0) {
+      setAgentThinkingLog(wsThinkingLog);
+    }
+  }, [wsThinkingLog]);
   
   // Load data from backend API
   const loadData = async () => {
@@ -487,11 +513,44 @@ export default function Dashboard() {
   // Emergency stop handler - stops trading but keeps monitoring
   const handleEmergencyStop = async () => {
     setIsEmergencyStopping(true);
-    emergencyStop();
-    toast.error('Emergency Stop: Trading halted, monitoring continues');
-    await new Promise((r) => setTimeout(r, 1500));
-    setAgentStatus((prev) => ({ ...prev, is_running: false }));
-    setIsEmergencyStopping(false);
+    try {
+      const response = await fetch(`${API_BASE}/agent/emergency-stop`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.error('🛑 Emergency Stop: All activities halted');
+        setAgentStatus((prev) => ({ ...prev, is_running: false }));
+      } else {
+        toast.error('Failed to stop agent');
+      }
+    } catch (error) {
+      toast.error('Error stopping agent');
+      console.error(error);
+    } finally {
+      setIsEmergencyStopping(false);
+    }
+  };
+
+  const handleStartAgent = async () => {
+    setIsStarting(true);
+    try {
+      const response = await fetch(`${API_BASE}/agent/start`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('🚀 AI Agent started successfully');
+        setAgentStatus((prev) => ({ ...prev, is_running: true }));
+      } else {
+        toast.error(data.message || 'Failed to start agent');
+      }
+    } catch (error) {
+      toast.error('Error starting agent');
+      console.error(error);
+    } finally {
+      setIsStarting(false);
+    }
   };
   
   // Format time
@@ -650,6 +709,53 @@ export default function Dashboard() {
               </div>
               <div className="text-sm text-gray-400 mt-2">
                 {sentinelStatus.daily_spent?.toFixed(2) || '0.00'} / {sentinelStatus.daily_limit?.toFixed(2) || '0.00'} used today
+              </div>
+            </div>
+          </div>
+
+          {/* Agent Controls - Prominent Position */}
+          <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 backdrop-blur-sm rounded-2xl p-6 border border-purple-500/30">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${agentStatus.is_running ? 'bg-green-500/20 border-2 border-green-500' : 'bg-gray-500/20 border-2 border-gray-500'}`}>
+                  <Bot className={`w-6 h-6 ${agentStatus.is_running ? 'text-green-400' : 'text-gray-400'}`} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg">AI Trading Agent</h3>
+                  <p className="text-sm text-gray-400">
+                    {agentStatus.is_running ? '🟢 Active - Running every 2 minutes' : '⚫ Stopped - Click to start'}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                {agentStatus.is_running ? (
+                  <button
+                    onClick={handleEmergencyStop}
+                    disabled={isEmergencyStopping}
+                    className="flex items-center justify-center gap-2 px-8 py-4 bg-red-500/20 text-red-400 border-2 border-red-500/30 rounded-xl font-semibold hover:bg-red-500/30 transition-colors disabled:opacity-50"
+                  >
+                    {isEmergencyStopping ? (
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    ) : (
+                      <Pause className="w-6 h-6" />
+                    )}
+                    <span className="text-lg">Emergency Stop</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStartAgent}
+                    disabled={isStarting}
+                    className="flex items-center justify-center gap-2 px-8 py-4 bg-green-500/20 text-green-400 border-2 border-green-500/30 rounded-xl font-semibold hover:bg-green-500/30 transition-colors disabled:opacity-50"
+                  >
+                    {isStarting ? (
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    ) : (
+                      <Play className="w-6 h-6" />
+                    )}
+                    <span className="text-lg">Start AI Agent</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -864,64 +970,60 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Agent Decision Log */}
-          <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-800">
-            <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <Bot className="w-5 h-5 text-purple-400" />
-              Agent Decision Log
-            </h3>
+          {/* AI LIVE THINKING PANEL - NEW FEATURE */}
+          <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 backdrop-blur-sm rounded-2xl p-6 border border-purple-500/30">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Zap className="w-5 h-5 text-cyan-400 animate-pulse" />
+                AI Agent Live Thinking
+              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-xs text-gray-400">Live</span>
+              </div>
+            </div>
             
-            <div className="space-y-4 max-h-[400px] overflow-y-auto">
-              {agentDecisions.length > 0 ? (
-                agentDecisions.map((decision, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-gray-800/50 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs text-gray-400">
-                        {new Date(decision.timestamp).toLocaleString()}
+            <div className="bg-black/40 rounded-lg p-4 font-mono text-xs max-h-[500px] overflow-y-auto border border-gray-700">
+              <div className="space-y-2">
+                {/* Live AI Thinking Stream */}
+                {agentThinkingLog.length > 0 ? (
+                  agentThinkingLog.map((log, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-start gap-3 py-2 ${
+                        idx === 0 ? 'animate-pulse' : 'opacity-80'
+                      }`}
+                    >
+                      <span className="text-gray-500 text-xs font-mono shrink-0">
+                        {new Date(log.timestamp).toLocaleTimeString()}
                       </span>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          decision.decision.includes("BUY")
-                            ? "bg-green-500/20 text-green-400"
-                            : decision.decision.includes("SELL")
-                            ? "bg-red-500/20 text-red-400"
-                            : "bg-gray-500/20 text-gray-400"
-                        }`}
-                      >
-                        {decision.decision}
-                      </span>
-                    </div>
-                    
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <span className="text-gray-400">Market Data: </span>
-                        <span className="text-gray-200">{decision.market_data}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">Sentinel Status: </span>
-                        <span className="text-gray-200">{decision.sentinel_status}</span>
-                      </div>
-                      <div className="pt-2 border-t border-gray-700">
-                        <span className="text-gray-400">Reason: </span>
-                        <span className="text-gray-200">{decision.reason}</span>
+                      <div className="flex-1">
+                        <span className={`text-sm ${
+                          log.type === 'analysis' ? 'text-cyan-400' :
+                          log.type === 'decision' ? 'text-purple-400' :
+                          log.type === 'trade' ? 'text-green-400' :
+                          log.type === 'warning' ? 'text-yellow-400' :
+                          'text-gray-300'
+                        }`}>
+                          {log.message}
+                        </span>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Zap className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p>AI agent not active</p>
+                    <p className="text-sm mt-1">Start the agent to see live analysis</p>
                   </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Bot className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No agent decisions yet.</p>
-                  <p className="text-sm mt-1">Start the AI agent to see decision logs here.</p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Fifth Row - Controls */}
+          {/* REMOVED - Controls moved to top for better visibility */}
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+```
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Last Decision Card */}
             <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-6 border border-gray-800">
@@ -998,10 +1100,15 @@ export default function Dashboard() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => setAgentStatus((prev) => ({ ...prev, is_running: true }))}
-                      className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-500/20 text-green-400 border border-green-500/30 rounded-xl font-semibold hover:bg-green-500/30 transition-colors"
+                      onClick={handleStartAgent}
+                      disabled={isStarting}
+                      className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-500/20 text-green-400 border border-green-500/30 rounded-xl font-semibold hover:bg-green-500/30 transition-colors disabled:opacity-50"
                     >
-                      <Play className="w-5 h-5" />
+                      {isStarting ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Play className="w-5 h-5" />
+                      )}
                       Start Agent
                     </button>
                   )}
@@ -1012,6 +1119,7 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+          </div> 
           </div>
         </main>
 
