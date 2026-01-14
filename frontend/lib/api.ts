@@ -25,10 +25,9 @@ export interface PoolStatus {
 }
 
 export interface WalletBalances {
-  tcro: number;
-  wcro: number;
-  tusd: number;
-  wallet_address: string;
+  CRO: number;
+  USDC: number;
+  totalValue: number;
 }
 
 export interface SentinelStatus {
@@ -48,6 +47,14 @@ export interface TradeDecision {
   confidence: number;
   gas_cost_usd: number;
   tx_hash?: string;
+  reason: string;
+}
+
+export interface AgentDecision {
+  timestamp: string;
+  market_data: string;
+  sentinel_status: string;
+  decision: string;
   reason: string;
 }
 
@@ -81,10 +88,9 @@ export const mockData = {
     tvl_usd: 180.44,
   },
   walletBalances: {
-    tcro: 69.2233,
-    wcro: 0.5,
-    tusd: 10.0,
-    wallet_address: '0xa22Db5E0...6FAABE94',
+    CRO: 69.2233,
+    USDC: 10.0,
+    totalValue: 79.2233,
   },
   sentinelStatus: {
     daily_limit: 1.0,

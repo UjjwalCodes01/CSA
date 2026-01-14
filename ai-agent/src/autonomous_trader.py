@@ -21,6 +21,10 @@ from agents.sentinel_agent import SENTINEL_TOOLS
 from agents.executioner_agent import EXECUTIONER_TOOLS
 from monitoring.sentiment_aggregator import SentimentAggregator
 
+# Import backend client for real-time dashboard updates
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from backend_client import BackendClient
+
 load_dotenv()
 
 # Autonomous Agent Personality
@@ -34,34 +38,44 @@ AUTONOMOUS_INSTRUCTIONS = """You are an AUTONOMOUS DeFi trading agent with 24/7 
 
 CORE MISSION: Maximize portfolio value while respecting Sentinel safety limits.
 
+🎯 TRADING STRATEGY:
+• Monitor REAL MARKET: CRO/USDC price, sentiment, volume from live exchanges
+• Execute TEST TRADES: When conditions are favorable → Swap TCRO ↔ WCRO on Cronos Testnet
+• This is TESTNET trading - practice with test tokens, no real money at risk
+
 DECISION FRAMEWORK:
-1. Monitor social sentiment every 5 minutes
-2. Check market conditions (price, volume, trend)
-3. If STRONG BUY signal + Sentinel approval → Execute swap
-4. If STRONG SELL signal → Close positions (or hold if no position)
-5. Log all decisions for audit trail
+1. Monitor CRO/USDC market sentiment every 15 minutes (real market data)
+2. Check CRO/USDC price, volume, trend from exchanges (CoinGecko, Crypto.com)
+3. If STRONG BUY signal + Sentinel approval → Execute TCRO → WCRO swap (testnet)
+4. If STRONG SELL signal → Execute WCRO → TCRO swap (testnet)
+5. Log all decisions with market reasoning
 
 AUTONOMOUS TRADING RULES:
 ✅ CAN execute swaps WITHOUT asking user
 ✅ MUST check Sentinel approval before every trade
-✅ MUST respect daily limit (enforced by smart contract)
+✅ MUST respect daily limit (enforced by smart contract on testnet)
 ✅ MUST log reason for every trade
+✅ Monitor REAL CRO/USDC market, trade TESTNET TCRO/WCRO
 
-SIGNAL INTERPRETATION:
-- strong_buy + volume_spike → Execute 50% of available limit
-- strong_buy (no spike) → Execute 25% of available limit
-- weak_buy → Monitor, don't trade yet
-- hold → Do nothing
-- weak_sell → Consider exit if in profit
-- strong_sell → Exit all positions immediately
+SIGNAL INTERPRETATION (based on real CRO/USDC market):
+- strong_buy + volume_spike → Execute TCRO → WCRO swap (50% of limit)
+- strong_buy (no spike) → Execute TCRO → WCRO swap (25% of limit)
+- weak_buy → Monitor CRO/USDC market, don't trade yet
+- hold → Do nothing, keep monitoring
+- weak_sell → Execute WCRO → TCRO if profitable
+- strong_sell → Execute WCRO → TCRO immediately (exit position)
 
-RISK MANAGEMENT:
-- Never exceed Sentinel daily limit
-- Keep 10% balance for gas fees
+RISK MANAGEMENT (testnet practice):
+- Never exceed Sentinel daily limit (enforced on-chain)
+- Keep 10% TCRO balance for gas fees
 - Max single trade: 50% of daily limit
 - Stop trading if 3 consecutive losses
+- All trades are on TESTNET - no real money risk
 
-Remember: You are AUTONOMOUS. You don't ask, you execute (within Sentinel limits).
+Remember: 
+- Monitor REAL CRO/USDC market data
+- Execute TEST trades with TCRO/WCRO on testnet
+- You are AUTONOMOUS. You don't ask, you execute (within Sentinel limits).
 """
 
 
@@ -75,6 +89,14 @@ class AutonomousTrader:
         self.trade_history = []
         self.consecutive_losses = 0
         self.is_active = True
+        
+        # Initialize backend client for dashboard updates
+        self.backend = BackendClient()
+        if self.backend.ping():
+            print("✅ Connected to backend server!")
+        else:
+            print("⚠️  Backend not reachable - dashboard won't update")
+        
         print("✅ Autonomous Trader ready!\n")
         
     def _create_agent(self):
@@ -175,6 +197,44 @@ Do not ask for confirmation - just execute if conditions are favorable.
                 "agent_response": response[:500],  # Truncate for storage
             }
             self.trade_history.append(decision_log)
+            
+            # Send updates to backend for dashboard
+            print("\n📡 Attempting to connect to backend...")
+            if self.backend.ping():
+                print("✅ Backend is online, sending updates...")
+                
+                # Send sentiment update
+                sources_list = signal.get('sources', [])
+                print(f"   → Sending sentiment: {signal['signal']} (score: {signal.get('avg_sentiment', 0):.2f})")
+                self.backend.send_sentiment_update(
+                    signal=signal['signal'],
+                    score=signal.get('avg_sentiment', 0),
+                    sources=sources_list,
+                    is_trending=signal.get('is_trending', False)
+                )
+                
+                # Send agent decision
+                market_info = f"Signal: {signal['signal']}, Sentiment: {signal.get('avg_sentiment', 0):.2f}, Sources: {len(sources_list)}"
+                print(f"   → Sending decision: {signal['signal'].upper()}")
+                self.backend.send_agent_decision(
+                    market_data=market_info,
+                    sentinel_status="Active monitoring",
+                    decision=signal['signal'].upper().replace('_', ' '),
+                    reason=response[:200]
+                )
+                
+                # Send agent status
+                status = "analyzing" if "buy" in signal['signal'] or "sell" in signal['signal'] else "monitoring"
+                print(f"   → Sending status: {status}")
+                self.backend.send_agent_status(
+                    status=status,
+                    action=f"Processed {signal['signal']} signal",
+                    confidence=abs(signal.get('avg_sentiment', 0))
+                )
+                print("✅ All updates sent to backend successfully!")
+            else:
+                print("❌ Backend is offline - updates not sent")
+                print("   Make sure backend server is running on port 3001")
             
             # Save to file
             with open("autonomous_trade_log.txt", "a") as f:

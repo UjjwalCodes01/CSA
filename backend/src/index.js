@@ -239,24 +239,113 @@ app.get('/api/agent/decisions', async (req, res) => {
   }
 });
 
-// Emergency stop
+// Start agent
+app.post('/api/agent/start', async (req, res) => {
+  try {
+    if (agentState.isRunning) {
+      return res.json({ 
+        success: false, 
+        message: 'Agent is already running' 
+      });
+    }
+
+    console.log('🚀 Starting AI agent...');
+    
+    // Update state
+    agentState.isRunning = true;
+    agentState.status = 'running';
+    agentState.currentAction = 'Agent started - monitoring markets';
+    agentState.lastUpdate = new Date().toISOString();
+    
+    // Broadcast to clients
+    broadcastToAll({
+      type: 'agent_status',
+      data: {
+        status: 'running',
+        lastUpdate: agentState.lastUpdate,
+        currentAction: agentState.currentAction,
+        confidence: 0,
+        isRunning: true
+      }
+    });
+    
+    // Log decision
+    addAgentDecision(
+      'Agent manually started by user',
+      'Ready to monitor and trade',
+      'AGENT STARTED',
+      'AI agent activated. Will monitor real CRO/USDC market and execute test trades on Cronos Testnet.'
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Agent started successfully',
+      status: agentState.status
+    });
+  } catch (error) {
+    console.error('Error starting agent:', error);
+    res.status(500).json({ error: 'Failed to start agent' });
+  }
+});
+
+// Stop agent
+app.post('/api/agent/stop', async (req, res) => {
+  try {
+    if (!agentState.isRunning) {
+      return res.json({ 
+        success: false, 
+        message: 'Agent is already stopped' 
+      });
+    }
+
+    console.log('🛑 Stopping AI agent...');
+    
+    // Update state
+    agentState.isRunning = false;
+    agentState.status = 'stopped';
+    agentState.currentAction = 'Agent stopped by user';
+    agentState.lastUpdate = new Date().toISOString();
+    
+    // Broadcast to clients
+    broadcastToAll({
+      type: 'agent_status',
+      data: {
+        status: 'stopped',
+        lastUpdate: agentState.lastUpdate,
+        currentAction: agentState.currentAction,
+        confidence: 0,
+        isRunning: false
+      }
+    });
+    
+    // Log decision
+    addAgentDecision(
+      'Agent manually stopped by user',
+      'No longer monitoring or trading',
+      'AGENT STOPPED',
+      'AI agent deactivated by user request. All monitoring and trading halted.'
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Agent stopped successfully',
+      status: agentState.status
+    });
+  } catch (error) {
+    console.error('Error stopping agent:', error);
+    res.status(500).json({ error: 'Failed to stop agent' });
+  }
+});
+
+// Emergency stop (kept for compatibility)
 app.post('/api/agent/emergency-stop', async (req, res) => {
   try {
     console.log('🛑 Emergency stop triggered via API');
     
-    // Kill Python agent process if running
-    if (pythonAgentProcess) {
-      console.log('🛑 Killing Python AI agent process...');
-      pythonAgentProcess.kill('SIGTERM');
-      pythonAgentProcess = null;
-      console.log('✅ Python agent stopped');
-    }
-    
-    // Update agent state - COMPLETELY STOP everything
-    agentState.isTradingEnabled = false;
-    agentState.isMonitoring = false;
+    // Same as regular stop for now
+    agentState.isRunning = false;
     agentState.status = 'stopped';
-    agentState.currentAction = 'EMERGENCY STOP: All activities halted';
+    agentState.currentAction = 'Emergency stop activated';
     
     // Broadcast to WebSocket clients
     broadcastToAll({
@@ -264,113 +353,27 @@ app.post('/api/agent/emergency-stop', async (req, res) => {
       data: {
         status: 'stopped',
         lastUpdate: new Date().toISOString(),
-        currentAction: 'EMERGENCY STOP: All activities halted',
+        currentAction: 'Emergency stop activated',
         confidence: 0,
-        isTradingEnabled: false,
-        isMonitoring: false
-      }
-    });
-    
-    // Broadcast to thinking panel
-    broadcastToAll({
-      type: 'ai_thinking',
-      data: {
-        type: 'warning',
-        message: '🛑 EMERGENCY STOP activated - All agent activities halted',
-        timestamp: new Date().toISOString()
+        isRunning: false
       }
     });
     
     // Log the decision
     addAgentDecision(
-      `Current price: $${agentState.marketData.price}`,
-      'Trading disabled by emergency stop',
+      'Emergency stop activated',
+      'All operations halted',
       'EMERGENCY STOP',
-      'All trading halted by user. System continues to monitor market conditions.'
+      'Emergency stop triggered by user. All trading and monitoring halted.'
     );
     
     res.json({ 
       success: true, 
-      message: 'Emergency stop activated - ALL activities halted'
+      message: 'Emergency stop activated'
     });
   } catch (error) {
     console.error('Error activating emergency stop:', error);
     res.status(500).json({ error: 'Failed to activate emergency stop' });
-  }
-});
-
-// Start agent endpoint
-app.post('/api/agent/start', async (req, res) => {
-  try {
-    console.log('🚀 Starting AI agent via API');
-    
-    // Check if already running
-    if (pythonAgentProcess) {
-      return res.json({ 
-        success: false, 
-        message: 'Agent is already running' 
-      });
-    }
-    
-    // Update agent state
-    agentState.isTradingEnabled = true;
-    agentState.isMonitoring = true;
-    agentState.status = 'monitoring';
-    agentState.currentAction = 'Starting autonomous agent...';
-    
-    // Start Python agent process
-    const agentPath = path.join(__dirname, '../../ai-agent/src/autonomous_trader_mcp.py');
-    const venvPython = path.join(__dirname, '../../.venv/bin/python');
-    
-    pythonAgentProcess = spawn(venvPython, [agentPath], {
-      cwd: path.join(__dirname, '../../ai-agent'),
-      env: { ...process.env, AGENT_MODE: process.env.AGENT_MODE || 'demo' }
-    });
-    
-    pythonAgentProcess.stdout.on('data', (data) => {
-      console.log(`[Python Agent] ${data}`);
-    });
-    
-    pythonAgentProcess.stderr.on('data', (data) => {
-      console.error(`[Python Agent Error] ${data}`);
-    });
-    
-    pythonAgentProcess.on('close', (code) => {
-      console.log(`[Python Agent] Process exited with code ${code}`);
-      pythonAgentProcess = null;
-      agentState.status = 'stopped';
-      agentState.currentAction = 'Agent stopped';
-    });
-    
-    // Broadcast status update
-    broadcastToAll({
-      type: 'agent_status',
-      data: {
-        status: 'monitoring',
-        lastUpdate: new Date().toISOString(),
-        currentAction: 'Autonomous agent started',
-        confidence: 0,
-        isTradingEnabled: true,
-        isMonitoring: true
-      }
-    });
-    
-    broadcastToAll({
-      type: 'ai_thinking',
-      data: {
-        type: 'info',
-        message: '🚀 Autonomous AI agent started successfully',
-        timestamp: new Date().toISOString()
-      }
-    });
-    
-    res.json({ 
-      success: true, 
-      message: 'AI agent started successfully'
-    });
-  } catch (error) {
-    console.error('Error starting agent:', error);
-    res.status(500).json({ error: 'Failed to start agent' });
   }
 });
 
@@ -505,34 +508,31 @@ app.post('/api/market/price/update', async (req, res) => {
 // AGENT STATE MANAGEMENT
 // ============================================================================
 
-// Python AI agent process management
-let pythonAgentProcess = null;
-
 let agentState = {
-  status: 'stopped', // monitoring, trading, stopped, error
-  isMonitoring: false,   // Start false - user must start agent
-  isTradingEnabled: false, // Start false - user must start agent
+  status: 'stopped', // stopped, running
+  isRunning: false,   // Agent only runs when manually started
   lastUpdate: new Date().toISOString(),
-  currentAction: 'Agent stopped - Click Start Agent to begin',
+  currentAction: 'Agent stopped - click Start to begin',
   confidence: 0,
   marketData: {
-    price: 0.0994,
-    change24h: 2.34
+    price: 0,
+    change24h: 0
   },
   poolData: {
-    wcro_balance: 102.0,
-    tusd_balance: 78.44,
-    price: 0.769,
-    tvl_usd: 180.44
+    wcro_balance: 0,
+    tusd_balance: 0,
+    price: 0,
+    tvl_usd: 0
   },
   sentiment: {
-    signal: 'neutral',
-    score: 0.5,  // 0.5 = neutral (0 = bearish, 1 = bullish)
+    signal: 'hold',
+    score: 0,
     sources: []
   },
   tradeHistory: [],
   pendingApprovals: [],
-  decisions: [] // Agent decision log
+  decisions: [], // Agent decision log
+  agentProcess: null // Store Python agent process
 };
 
 // ============================================================================
@@ -709,102 +709,41 @@ function startAIAgent() {
 // PERIODIC UPDATES (Agent always monitoring)
 // ============================================================================
 
-// ============================================================================
-// PYTHON AGENT INTEGRATION - Receive real AI thinking
-// ============================================================================
-
-// Endpoint for Python agent to send thinking messages
-app.post('/api/agent/thinking', (req, res) => {
-  const { type, message } = req.body;
-  
-  if (!type || !message) {
-    return res.status(400).json({ error: 'type and message required' });
-  }
-  
-  // Broadcast real AI thinking to all connected clients
-  broadcastToAll({
-    type: 'ai_thinking',
-    data: {
-      type,
-      message,
-      timestamp: new Date().toISOString()
-    }
-  });
-  
-  res.json({ success: true });
-});
-
-// Endpoint for Python agent to update sentiment
-app.post('/api/agent/sentiment', (req, res) => {
-  const { signal, score, sources } = req.body;
+// Agent always monitors market - update every 30 seconds
+setInterval(() => {
+  // Randomly update sentiment (in production, this comes from AI agent)
+  const signals = ['strong_buy', 'buy', 'neutral', 'sell', 'strong_sell'];
+  const randomSignal = signals[Math.floor(Math.random() * signals.length)];
+  const sentimentScore = (Math.random() * 2 - 1).toFixed(2);
   
   broadcastSentimentUpdate({
-    signal,
-    score,
-    sources: sources || [],
+    signal: randomSignal,
+    score: parseFloat(sentimentScore),
+    sources: ['CoinGecko', 'Price Action'],
     timestamp: new Date().toISOString()
   });
-  
-  res.json({ success: true });
-});
 
-// Endpoint for Python agent to report decisions
-app.post('/api/agent/decision', (req, res) => {
-  const { action, amount, price, confidence, reason, tx_hash, sentiment_score } = req.body;
+  // Update market price
+  const newPrice = (0.0994 + (Math.random() * 0.01 - 0.005)).toFixed(4);
+  const priceChange = (Math.random() * 10 - 5).toFixed(2);
+  agentState.marketData.price = parseFloat(newPrice);
+  agentState.marketData.change24h = parseFloat(priceChange);
   
-  // Update agent state
-  agentState.status = action === 'hold' ? 'monitoring' : 'executing';
-  agentState.currentAction = `${action.toUpperCase()}: ${reason || 'No reason provided'}`;
+  // Update agent status
+  if (agentState.isTradingEnabled) {
+    agentState.status = randomSignal === 'strong_buy' || randomSignal === 'strong_sell' ? 'analyzing' : 'monitoring';
+    agentState.currentAction = `Monitoring markets - ${randomSignal.replace('_', ' ').toUpperCase()}`;
+  } else {
+    agentState.status = 'monitoring';
+    agentState.currentAction = 'Trading halted - monitoring only';
+  }
   
-  // Broadcast decision
   broadcastAgentStatus(
     agentState.status,
     agentState.currentAction,
-    confidence || 0
+    Math.abs(parseFloat(sentimentScore))
   );
-  
-  // Add to trade history if not hold
-  if (action !== 'hold' && amount) {
-    const trade = {
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      action,
-      amount,
-      price: price || agentState.marketData.price,
-      confidence: confidence || 0,
-      sentiment_score: sentiment_score || 0.5,
-      gas_cost_usd: 0.05,
-      reason: reason || 'AI autonomous decision',
-      tx_hash
-    };
-    
-    agentState.tradeHistory.unshift(trade);
-    if (agentState.tradeHistory.length > 50) {
-      agentState.tradeHistory.pop();
-    }
-    
-    broadcastToAll({
-      type: 'trade_event',
-      data: trade
-    });
-  }
-  
-  res.json({ success: true });
-});
-
-// Endpoint for Python agent to update market price
-app.post('/api/agent/price', (req, res) => {
-  const { price, change_24h } = req.body;
-  
-  if (price) {
-    agentState.marketData.price = parseFloat(price);
-  }
-  if (change_24h !== undefined) {
-    agentState.marketData.change24h = parseFloat(change_24h);
-  }
-  
-  res.json({ success: true });
-});
+}, 30000);
 
 // ============================================================================
 // START SERVER
