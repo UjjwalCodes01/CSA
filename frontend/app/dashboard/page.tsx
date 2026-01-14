@@ -268,20 +268,7 @@ export default function Dashboard() {
     next_cycle_in: 0,
   });
   const [tradeHistory, setTradeHistory] = useState<TradeDecision[]>([]);
-  const [sentimentHistory, setSentimentHistory] = useState<any[]>(() => {
-    // Generate dummy sentiment data for last 24 hours
-    const now = new Date();
-    const dummyData = [];
-    for (let i = 23; i >= 0; i--) {
-      const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
-      dummyData.push({
-        hour: hour.getHours() + ':00',
-        sentiment: 0.45 + Math.random() * 0.3, // Random sentiment between 0.45-0.75
-        timestamp: hour.toISOString()
-      });
-    }
-    return dummyData;
-  });
+  const [sentimentHistory, setSentimentHistory] = useState<any[]>([]);
   const [agentDecisions, setAgentDecisions] = useState<AgentDecision[]>([]);
   const [isEmergencyStopping, setIsEmergencyStopping] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
@@ -481,13 +468,50 @@ export default function Dashboard() {
   // Initial load only (no auto-refresh) - removed to fix hydration
   // Data loads from mock immediately, no loading state needed
 
-  // Emergency stop handler - stops trading but keeps monitoring
+  // Emergency stop handler - stops the agent
   const handleEmergencyStop = async () => {
+    if (!API_BASE) return;
     setIsEmergencyStopping(true);
-    emergencyStop();
-    toast.error('Emergency Stop: Trading halted, monitoring continues');
-    await new Promise((r) => setTimeout(r, 1500));
-    setAgentStatus((prev) => ({ ...prev, is_running: false }));
+    try {
+      const response = await fetch(`${API_BASE}/agent/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (response.ok) {
+        toast.error('Agent Stopped');
+        setAgentStatus((prev) => ({ ...prev, is_running: false }));
+      } else {
+        toast.error('Failed to stop agent');
+      }
+    } catch (error) {
+      console.error('Stop agent error:', error);
+      toast.error('Error stopping agent');
+    }
+    setIsEmergencyStopping(false);
+  };
+
+  // Start agent handler
+  const handleStartAgent = async () => {
+    if (!API_BASE) return;
+    setIsEmergencyStopping(true);
+    try {
+      const response = await fetch(`${API_BASE}/agent/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (response.ok) {
+        toast.success('Agent Started');
+        setAgentStatus((prev) => ({ ...prev, is_running: true }));
+        loadData(); // Refresh data
+      } else {
+        toast.error('Failed to start agent');
+      }
+    } catch (error) {
+      console.error('Start agent error:', error);
+      toast.error('Error starting agent');
+    }
     setIsEmergencyStopping(false);
   };
   
@@ -623,8 +647,10 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="text-sm text-gray-400">
-                {agentStatus.is_running && (
+                {agentStatus.is_running ? (
                   <>Next cycle in {formatCountdown(agentStatus.next_cycle_in)}</>
+                ) : (
+                  <>Click Start to begin trading</>
                 )}
               </div>
               <div className="text-xs text-gray-500 mt-1">
@@ -675,30 +701,40 @@ export default function Dashboard() {
                   Sentiment (24h)
                 </h3>
               </div>
-              <ResponsiveContainer width="100%" height="85%">
-                <AreaChart data={sentimentHistory}>
-                  <defs>
-                    <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="hour" stroke="#6b7280" fontSize={10} />
-                  <YAxis stroke="#6b7280" fontSize={10} domain={[0, 1]} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                    labelStyle={{ color: "#9ca3af" }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="sentiment"
-                    stroke="#06b6d4"
-                    fill="url(#sentimentGradient)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {sentimentHistory.length > 0 ? (
+                <ResponsiveContainer width="100%" height="85%">
+                  <AreaChart data={sentimentHistory}>
+                    <defs>
+                      <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="hour" stroke="#6b7280" fontSize={10} />
+                    <YAxis stroke="#6b7280" fontSize={10} domain={[0, 1]} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
+                      labelStyle={{ color: "#9ca3af" }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="sentiment"
+                      stroke="#06b6d4"
+                      fill="url(#sentimentGradient)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[85%]">
+                  <div className="text-center text-gray-500">
+                    <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p>No sentiment data yet</p>
+                    <p className="text-sm mt-1">Start the agent to collect sentiment data</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -991,21 +1027,26 @@ export default function Dashboard() {
                       ) : (
                         <Pause className="w-5 h-5" />
                       )}
-                      Emergency Stop
+                      Stop Agent
                     </button>
                   ) : (
                     <button
-                      onClick={() => setAgentStatus((prev) => ({ ...prev, is_running: true }))}
-                      className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-500/20 text-green-400 border border-green-500/30 rounded-xl font-semibold hover:bg-green-500/30 transition-colors"
+                      onClick={handleStartAgent}
+                      disabled={isEmergencyStopping}
+                      className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-500/20 text-green-400 border border-green-500/30 rounded-xl font-semibold hover:bg-green-500/30 transition-colors disabled:opacity-50"
                     >
-                      <Play className="w-5 h-5" />
+                      {isEmergencyStopping ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Play className="w-5 h-5" />
+                      )}
                       Start Agent
                     </button>
                   )}
                 </div>
                 
                 <div className="text-xs text-gray-500 text-center">
-                  Control the autonomous AI trading agent
+                  Agent persists across page refreshes - manually start/stop only
                 </div>
               </div>
             </div>

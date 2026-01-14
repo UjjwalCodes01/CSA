@@ -239,39 +239,137 @@ app.get('/api/agent/decisions', async (req, res) => {
   }
 });
 
-// Emergency stop
+// Start agent
+app.post('/api/agent/start', async (req, res) => {
+  try {
+    if (agentState.isRunning) {
+      return res.json({ 
+        success: false, 
+        message: 'Agent is already running' 
+      });
+    }
+
+    console.log('🚀 Starting AI agent...');
+    
+    // Update state
+    agentState.isRunning = true;
+    agentState.status = 'running';
+    agentState.currentAction = 'Agent started - monitoring markets';
+    agentState.lastUpdate = new Date().toISOString();
+    
+    // Broadcast to clients
+    broadcastToAll({
+      type: 'agent_status',
+      data: {
+        status: 'running',
+        lastUpdate: agentState.lastUpdate,
+        currentAction: agentState.currentAction,
+        confidence: 0,
+        isRunning: true
+      }
+    });
+    
+    // Log decision
+    addAgentDecision(
+      'Agent manually started by user',
+      'Ready to monitor and trade',
+      'AGENT STARTED',
+      'AI agent activated. Will monitor real CRO/USDC market and execute test trades on Cronos Testnet.'
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Agent started successfully',
+      status: agentState.status
+    });
+  } catch (error) {
+    console.error('Error starting agent:', error);
+    res.status(500).json({ error: 'Failed to start agent' });
+  }
+});
+
+// Stop agent
+app.post('/api/agent/stop', async (req, res) => {
+  try {
+    if (!agentState.isRunning) {
+      return res.json({ 
+        success: false, 
+        message: 'Agent is already stopped' 
+      });
+    }
+
+    console.log('🛑 Stopping AI agent...');
+    
+    // Update state
+    agentState.isRunning = false;
+    agentState.status = 'stopped';
+    agentState.currentAction = 'Agent stopped by user';
+    agentState.lastUpdate = new Date().toISOString();
+    
+    // Broadcast to clients
+    broadcastToAll({
+      type: 'agent_status',
+      data: {
+        status: 'stopped',
+        lastUpdate: agentState.lastUpdate,
+        currentAction: agentState.currentAction,
+        confidence: 0,
+        isRunning: false
+      }
+    });
+    
+    // Log decision
+    addAgentDecision(
+      'Agent manually stopped by user',
+      'No longer monitoring or trading',
+      'AGENT STOPPED',
+      'AI agent deactivated by user request. All monitoring and trading halted.'
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Agent stopped successfully',
+      status: agentState.status
+    });
+  } catch (error) {
+    console.error('Error stopping agent:', error);
+    res.status(500).json({ error: 'Failed to stop agent' });
+  }
+});
+
+// Emergency stop (kept for compatibility)
 app.post('/api/agent/emergency-stop', async (req, res) => {
   try {
     console.log('🛑 Emergency stop triggered via API');
     
-    // Update agent state - disable trading but keep monitoring
-    agentState.isTradingEnabled = false;
-    agentState.status = 'monitoring';
-    agentState.currentAction = 'Emergency stop: Trading halted, monitoring continues';
+    // Same as regular stop for now
+    agentState.isRunning = false;
+    agentState.status = 'stopped';
+    agentState.currentAction = 'Emergency stop activated';
     
     // Broadcast to WebSocket clients
     broadcastToAll({
       type: 'agent_status',
       data: {
-        status: 'monitoring',
+        status: 'stopped',
         lastUpdate: new Date().toISOString(),
-        currentAction: 'Emergency stop: Trading halted, monitoring continues',
+        currentAction: 'Emergency stop activated',
         confidence: 0,
-        isTradingEnabled: false
+        isRunning: false
       }
     });
     
     // Log the decision
     addAgentDecision(
-      `Current price: $${agentState.marketData.price}`,
-      'Trading disabled by emergency stop',
+      'Emergency stop activated',
+      'All operations halted',
       'EMERGENCY STOP',
-      'All trading halted by user. System continues to monitor market conditions.'
+      'Emergency stop triggered by user. All trading and monitoring halted.'
     );
     
     res.json({ 
       success: true, 
-      message: 'Emergency stop activated - trading halted, monitoring continues'
+      message: 'Emergency stop activated'
     });
   } catch (error) {
     console.error('Error activating emergency stop:', error);
@@ -411,30 +509,30 @@ app.post('/api/market/price/update', async (req, res) => {
 // ============================================================================
 
 let agentState = {
-  status: 'monitoring', // monitoring, trading, stopped, error
-  isMonitoring: true,   // Always true - agent always monitors
-  isTradingEnabled: true, // Can be toggled with emergency stop
+  status: 'stopped', // stopped, running
+  isRunning: false,   // Agent only runs when manually started
   lastUpdate: new Date().toISOString(),
-  currentAction: 'Monitoring markets...',
+  currentAction: 'Agent stopped - click Start to begin',
   confidence: 0,
   marketData: {
-    price: 0.0994,
-    change24h: 2.34
+    price: 0,
+    change24h: 0
   },
   poolData: {
-    wcro_balance: 102.0,
-    tusd_balance: 78.44,
-    price: 0.769,
-    tvl_usd: 180.44
+    wcro_balance: 0,
+    tusd_balance: 0,
+    price: 0,
+    tvl_usd: 0
   },
   sentiment: {
-    signal: 'neutral',
+    signal: 'hold',
     score: 0,
     sources: []
   },
   tradeHistory: [],
   pendingApprovals: [],
-  decisions: [] // Agent decision log
+  decisions: [], // Agent decision log
+  agentProcess: null // Store Python agent process
 };
 
 // ============================================================================
