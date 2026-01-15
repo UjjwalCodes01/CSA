@@ -29,11 +29,15 @@ ROUTER_ABI = [
 
 SENTINEL_ABI = [
     {
-        "inputs": [{"internalType": "uint256", "name": "amount", "type": "uint256"}],
+        "inputs": [
+            {"internalType": "address", "name": "dapp", "type": "address"},
+            {"internalType": "uint256", "name": "amount", "type": "uint256"}
+        ],
         "name": "simulateCheck",
         "outputs": [
             {"internalType": "bool", "name": "approved", "type": "bool"},
-            {"internalType": "string", "name": "action", "type": "string"}
+            {"internalType": "string", "name": "reason", "type": "string"},
+            {"internalType": "uint256", "name": "remainingLimit", "type": "uint256"}
         ],
         "stateMutability": "view",
         "type": "function"
@@ -123,12 +127,22 @@ def execute_swap_autonomous(
         min_output_wei = w3.to_wei(min_output, 'ether')
         
         # 1. CHECK SENTINEL APPROVAL (MANDATORY)
+        router_address = Web3.to_checksum_address(os.getenv("MOCK_ROUTER_ADDRESS"))
         try:
-            approved, action = sentinel.functions.simulateCheck(amount_wei).call()
+            # simulateCheck requires (dapp_address, amount)
+            sentinel_check = sentinel.functions.simulateCheck(
+                router_address,  # dapp address (AMM router)
+                amount_wei       # amount to swap
+            ).call()
+            
+            # Parse response: (bool approved, string reason, uint256 remainingLimit)
+            approved = sentinel_check[0]
+            action = sentinel_check[1]
+            
             if not approved:
                 return {
                     "status": "rejected",
-                    "reason": f"Sentinel blocked: {amount_cro} CRO exceeds daily limit. Action: {action}",
+                    "reason": f"Sentinel blocked: {action}",
                     "tx_hash": None
                 }
         except Exception as e:
@@ -241,12 +255,22 @@ def check_execution_feasibility(amount_cro: float, token_out: str = "USDC") -> D
         
         amount_wei = w3.to_wei(amount_cro, 'ether')
         
-        # Check Sentinel
+        # Check Sentinel approval (dapp = AMM router address)
+        router_address = Web3.to_checksum_address(os.getenv("MOCK_ROUTER_ADDRESS"))
         try:
-            sentinel_ok, action = sentinel.functions.simulateCheck(amount_wei).call()
-        except:
+            sentinel_check = sentinel.functions.simulateCheck(
+                router_address,  # dapp address (AMM router)
+                amount_wei       # amount to swap
+            ).call()
+            
+            # Parse response: (bool approved, string reason, uint256 remainingLimit)
+            sentinel_ok = sentinel_check[0]
+            action = sentinel_check[1]
+            remaining_limit = float(w3.from_wei(sentinel_check[2], 'ether'))
+        except Exception as e:
             sentinel_ok = False
-            action = "ERROR"
+            action = f"ERROR: {str(e)}"
+            remaining_limit = 0
         
         # Check balance
         wcro = w3.eth.contract(
@@ -265,13 +289,14 @@ def check_execution_feasibility(amount_cro: float, token_out: str = "USDC") -> D
             "feasible": can_execute,
             "sentinel_approved": sentinel_ok,
             "sentinel_action": action,
+            "sentinel_remaining": remaining_limit,
             "balance_available": balance_cro,
             "gas_reserve": gas_reserve,
             "recommended_max": max(0, balance_cro - gas_reserve) if sentinel_ok else 0,
             "blocking_reason": None if can_execute else (
                 f"Sentinel: {action}" if not sentinel_ok else "Insufficient balance"
             ),
-            "message": f"✅ Feasible: {can_execute} | Sentinel: {sentinel_ok} | Balance: {balance_cro:.4f} CRO"
+            "message": f"✅ Feasible: {can_execute} | Sentinel: {action} | Remaining Limit: {remaining_limit:.4f} CRO | Balance: {balance_cro:.4f} CRO"
         }
         
     except Exception as e:
