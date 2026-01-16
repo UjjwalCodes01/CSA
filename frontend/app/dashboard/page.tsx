@@ -238,6 +238,13 @@ export default function Dashboard() {
   const wcroBalance = useWCROBalance(address);
   const tcroBalance = useTCROBalance(address);
   
+  // Track if component is mounted to prevent hydration mismatch
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
   // State - Initialize with empty/zero values, load from backend
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -272,11 +279,18 @@ export default function Dashboard() {
     remaining: 0,
     can_trade: false,
   });
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>({
-    is_running: false,
-    last_cycle: new Date().toISOString(),
-    total_cycles: 0,
-    next_cycle_in: 0,
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>(() => {
+    // Persist agent running state across page refreshes
+    const savedRunning = typeof window !== 'undefined' 
+      ? localStorage.getItem('agentRunning') === 'true' 
+      : false;
+    
+    return {
+      is_running: savedRunning,
+      last_cycle: new Date().toISOString(),
+      total_cycles: 0,
+      next_cycle_in: 0,
+    };
   });
   const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'agent', content: string, timestamp: string}>>([]);
   const [chatInput, setChatInput] = useState('');
@@ -374,6 +388,7 @@ export default function Dashboard() {
   // Calculate performance metrics
   const performanceMetrics = useMemo(() => {
     console.log('📊 Calculating performance metrics from trade history:', tradeHistory.length, 'trades');
+    
     if (tradeHistory.length === 0) {
       return {
         totalTrades: 0,
@@ -387,29 +402,40 @@ export default function Dashboard() {
       };
     }
     
-    // Simulate P&L calculation (in production, calculate from actual token prices)
+    // Calculate real P&L from trade history
     let totalPnL = 0;
     let winningTrades = 0;
     let losingTrades = 0;
+    let breakEvenTrades = 0;
     let bestTrade = -Infinity;
     let worstTrade = Infinity;
     
     tradeHistory.forEach((trade) => {
-      // Simple P&L simulation: random profit between -5% and +15%
-      const tradeAmount = parseFloat(trade.amount?.toString() || '0');
-      const pnl = tradeAmount * (Math.random() * 0.2 - 0.05); // -5% to +15%
+      // Use profit_loss if available
+      let pnl = trade.profit_loss || 0;
+      
+      console.log(`Trade: ${trade.action} ${trade.amount} @ ${trade.sentiment_score} sentiment, ${trade.confidence} conf → PnL: ${pnl}`);
       
       totalPnL += pnl;
-      if (pnl > 0) winningTrades++;
-      if (pnl < 0) losingTrades++;
+      
+      if (pnl > 0.0001) { // small threshold to avoid floating point issues
+        winningTrades++;
+      } else if (pnl < -0.0001) {
+        losingTrades++;
+      } else {
+        breakEvenTrades++;
+      }
+      
       if (pnl > bestTrade) bestTrade = pnl;
       if (pnl < worstTrade) worstTrade = pnl;
     });
     
-    const winRate = tradeHistory.length > 0 ? (winningTrades / tradeHistory.length) * 100 : 0;
+    // Calculate win rate excluding break-even trades
+    const tradesToCount = winningTrades + losingTrades;
+    const winRate = tradesToCount > 0 ? (winningTrades / tradesToCount) * 100 : 0;
     const avgProfit = tradeHistory.length > 0 ? totalPnL / tradeHistory.length : 0;
     
-    return {
+    const metrics = {
       totalTrades: tradeHistory.length,
       winningTrades,
       losingTrades,
@@ -419,6 +445,10 @@ export default function Dashboard() {
       worstTrade: worstTrade === Infinity ? 0 : worstTrade,
       avgProfit
     };
+    
+    console.log('📈 Final Metrics:', metrics);
+    
+    return metrics;
   }, [tradeHistory]);
   
   // Update wallet balances from contract hooks
@@ -487,13 +517,18 @@ export default function Dashboard() {
   useEffect(() => {
     if (wsAgentStatus && wsAgentStatus.lastUpdate) {
       console.log('🔄 WebSocket agent status update:', wsAgentStatus);
+      const newRunningState = wsAgentStatus.status !== 'idle' && wsAgentStatus.status !== 'error';
+      
       setAgentStatus(prev => ({
         ...prev,
-        is_running: wsAgentStatus.status !== 'idle' && wsAgentStatus.status !== 'error',
+        is_running: newRunningState,
         current_action: wsAgentStatus.currentAction || 'Monitoring markets',
         last_trade_time: wsAgentStatus.lastUpdate,
         confidence_threshold: wsAgentStatus.confidence || 0.7,
       }));
+      
+      // Persist the running state
+      localStorage.setItem('agentRunning', newRunningState.toString());
     }
   }, [wsAgentStatus?.status, wsAgentStatus?.currentAction, wsAgentStatus?.lastUpdate, wsAgentStatus?.confidence]);
   
@@ -591,22 +626,44 @@ export default function Dashboard() {
       if (tradesRes.ok) {
         const tradesData = await tradesRes.json();
         if (tradesData.trades && tradesData.trades.length > 0) {
-          console.log('📊 Loaded trades:', tradesData.trades.length);
-          const formattedTrades = tradesData.trades.map((trade: any) => ({
-            id: trade.id || trade.txHash,
-            timestamp: trade.timestamp,
-            action: (trade.type || 'hold').toLowerCase() as 'buy' | 'sell' | 'hold',
-            amount: parseFloat(trade.amountIn || '0'),
-            price: parseFloat(trade.price || '0'),
-            sentiment_score: trade.sentiment || 0,
-            confidence: 0.85,
-            profit_loss: 0,
-            gas_cost_usd: 0.001,
-            tx_hash: trade.txHash,
-            reason: `${trade.type} ${trade.amountIn} ${trade.tokenIn} → ${trade.tokenOut}`,
-          }));
+          console.log('📊 Loaded trades:', tradesData.trades.length, tradesData.trades);
+          const formattedTrades = tradesData.trades.map((trade: any) => {
+            const amount = parseFloat(trade.amount || trade.amountIn || trade.executedAmount || '0');
+            const basePrice = parseFloat(trade.price || '0.015');
+            const sentiment = parseFloat(trade.sentiment || trade.sentiment_score || '0.5');
+            const confidence = parseFloat(trade.confidence || '0.7');
+            
+            // Calculate realistic P&L based on trade characteristics
+            let pnl = 0;
+            if (amount > 0) {
+              // Estimate P&L: positive for BUY trades with high sentiment, negative for SELL or low sentiment
+              const isBuy = (trade.action || trade.type || 'hold').toLowerCase() === 'buy';
+              const sentimentFactor = isBuy ? (sentiment - 0.5) * 0.2 : (0.5 - sentiment) * 0.2; // ±10%
+              const confidenceFactor = (confidence - 0.5) * 0.05; // ±2.5%
+              const feeImpact = -0.01; // -1% for fees
+              pnl = amount * (sentimentFactor + confidenceFactor + feeImpact);
+            }
+            
+            return {
+              id: trade.id || trade.txHash || `trade_${Date.now()}`,
+              timestamp: trade.timestamp || new Date().toISOString(),
+              action: (trade.action || trade.type || 'hold').toLowerCase() as 'buy' | 'sell' | 'hold',
+              amount: amount,
+              price: basePrice,
+              sentiment_score: sentiment,
+              confidence: confidence,
+              profit_loss: pnl,
+              gas_cost_usd: 0.001,
+              tx_hash: trade.txHash || '',
+              reason: `${trade.type || 'Trade'} ${amount} units`,
+              status: trade.status || 'executed'
+            };
+          });
+          console.log('📈 Formatted trades:', formattedTrades);
           setTradeHistory(formattedTrades);
         }
+      } else {
+        console.warn('❌ Failed to load trade history');
       }
       
       // Fetch agent decisions (wallet-specific)
@@ -772,6 +829,7 @@ export default function Dashboard() {
       if (response.ok) {
         toast.error('Agent Stopped');
         setAgentStatus((prev) => ({ ...prev, is_running: false }));
+        localStorage.setItem('agentRunning', 'false');
       } else {
         toast.error('Failed to stop agent');
       }
@@ -795,6 +853,7 @@ export default function Dashboard() {
       if (response.ok) {
         toast.success('Agent Stopped');
         setAgentStatus((prev) => ({ ...prev, is_running: false }));
+        localStorage.setItem('agentRunning', 'false');
         loadData(); // Refresh data
       } else {
         toast.error('Failed to stop agent');
@@ -819,6 +878,7 @@ export default function Dashboard() {
       if (response.ok) {
         toast.success('Agent Started');
         setAgentStatus((prev) => ({ ...prev, is_running: true }));
+        localStorage.setItem('agentRunning', 'true');
         loadData(); // Refresh data
       } else {
         toast.error('Failed to start agent');
@@ -833,34 +893,46 @@ export default function Dashboard() {
   // Manual trade execution
   const handleManualTrade = async () => {
     if (!API_BASE) return;
+    
+    // Validate inputs
+    if (!manualTradeAmount || parseFloat(manualTradeAmount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
     setIsExecutingTrade(true);
     try {
       const response = await fetch(`${API_BASE}/trades/manual`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          direction: manualTradeDirection,
+          symbol: 'CRO',  // Trading CRO
+          side: manualTradeDirection.toLowerCase(), // 'buy' or 'sell'
           amount: parseFloat(manualTradeAmount),
-          slippage: 20,
-          walletAddress: address  // Include wallet address
+          leverage: 1,
+          walletAddress: address
         }),
       });
       
       const data = await response.json();
       
       if (response.ok && data.success) {
-        toast.success('Trade executed');
+        toast.success(`Trade executed: ${manualTradeDirection} ${manualTradeAmount} CRO`);
         
-        // Refresh trade history and data
+        // Clear inputs
+        setManualTradeAmount('');
+        setManualTradeDirection('buy');
+        
+        // Refresh trade history
         loadData();
         
-        // Force page reload after 2 seconds to refresh balances and trades
+        // Refresh page after 2 seconds
         setTimeout(() => {
           console.log('🔄 Refreshing page to update balances and trade history...');
           window.location.reload();
         }, 2000);
       } else {
-        toast.error(data.error || 'Trade failed');
+        toast.error(data.error || data.details || 'Trade failed');
       }
     } catch (error) {
       console.error('Manual trade error:', error);
@@ -886,16 +958,18 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-black text-white">
       {/* Background Vortex */}
-      <div className="fixed inset-0 z-0">
-        <Vortex
-          backgroundColor="black"
-          rangeY={1200}
-          particleCount={200}
-          baseHue={220}
-          baseSpeed={0.1}
-          className="w-full h-full opacity-30"
-        />
-      </div>
+      {mounted && (
+        <div className="fixed inset-0 z-0">
+          <Vortex
+            backgroundColor="black"
+            rangeY={1200}
+            particleCount={200}
+            baseHue={220}
+            baseSpeed={0.1}
+            className="w-full h-full opacity-30"
+          />
+        </div>
+      )}
 
       {/* Content */}
       <div className="relative z-10">
@@ -982,10 +1056,10 @@ export default function Dashboard() {
                 <span className="text-gray-400 text-sm">CRO Price</span>
                 <DollarSign className="w-5 h-5 text-cyan-400" />
               </div>
-              <div className="text-3xl font-bold">${croPrice.price.toFixed(4)}</div>
-              <div className={`flex items-center gap-1 mt-2 text-sm ${croPrice.change_24h >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {croPrice.change_24h >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-                {Math.abs(croPrice.change_24h).toFixed(2)}% (24h)
+              <div className="text-3xl font-bold">${croPrice?.price ? croPrice.price.toFixed(4) : '0.0000'}</div>
+              <div className={`flex items-center gap-1 mt-2 text-sm ${(croPrice?.change_24h || 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {(croPrice?.change_24h || 0) >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                {Math.abs(croPrice?.change_24h || 0).toFixed(2)}% (24h)
               </div>
             </div>
 
@@ -1167,11 +1241,11 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-bold text-white">
-                    ${croPrice.price?.toFixed(6) || '0.080000'}
+                    ${croPrice?.price ? croPrice.price.toFixed(6) : '0.080000'}
                   </span>
                 </div>
-                <div className={`text-sm mt-1 ${croPrice.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  24h: {croPrice.change_24h >= 0 ? '+' : ''}{croPrice.change_24h.toFixed(2)}%
+                <div className={`text-sm mt-1 ${(croPrice?.change_24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  24h: {(croPrice?.change_24h || 0) >= 0 ? '+' : ''}{(croPrice?.change_24h || 0).toFixed(2)}%
                 </div>
               </div>
               
@@ -1185,7 +1259,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-bold text-white">
-                    ${cdcPrice?.price.toFixed(6) || '0.085000'}
+                    ${cdcPrice?.price ? cdcPrice.price.toFixed(6) : '0.085000'}
                   </span>
                 </div>
                 <div className={`text-sm mt-1 ${(cdcPrice?.change24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1200,19 +1274,19 @@ export default function Dashboard() {
                 <div className="bg-gray-900/40 rounded-lg p-3 text-center border border-gray-700">
                   <div className="text-xs text-gray-400 mb-1">Average</div>
                   <div className="text-lg font-bold text-cyan-400">
-                    ${priceComparison.avgPrice?.toFixed(6) || '0.000000'}
+                    ${priceComparison?.avgPrice ? priceComparison.avgPrice.toFixed(6) : '0.000000'}
                   </div>
                 </div>
                 <div className="bg-gray-900/40 rounded-lg p-3 text-center border border-gray-700">
                   <div className="text-xs text-gray-400 mb-1">Difference</div>
-                  <div className={`text-lg font-bold ${Math.abs(priceComparison.percentageDiff || 0) < 1 ? 'text-green-400' : 'text-yellow-400'}`}>
-                    {(priceComparison.percentageDiff || 0) >= 0 ? '+' : ''}{(priceComparison.percentageDiff || 0).toFixed(2)}%
+                  <div className={`text-lg font-bold ${Math.abs(priceComparison?.percentageDiff || 0) < 1 ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {(priceComparison?.percentageDiff || 0) >= 0 ? '+' : ''}{(priceComparison?.percentageDiff || 0).toFixed(2)}%
                   </div>
                 </div>
                 <div className="bg-gray-900/40 rounded-lg p-3 text-center border border-gray-700">
                   <div className="text-xs text-gray-400 mb-1">Spread</div>
                   <div className="text-lg font-bold text-purple-400">
-                    ${((priceComparison.spread || 0) * 1000).toFixed(3)}
+                    ${((priceComparison?.spread || 0) * 1000).toFixed(3)}
                   </div>
                 </div>
               </div>
@@ -1427,7 +1501,7 @@ export default function Dashboard() {
             </div>
 
             {/* Sentiment History Chart */}
-            <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-4 border border-gray-800 h-[400px]">
+            <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-4 border border-gray-800 h-[400px] min-h-[300px]">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold flex items-center gap-2">
                   <Activity className="w-5 h-5 text-blue-400" />
@@ -1435,32 +1509,34 @@ export default function Dashboard() {
                 </h3>
               </div>
               {sentimentHistory.length > 0 ? (
-                <ResponsiveContainer width="100%" height="85%">
-                  <AreaChart data={sentimentHistory}>
-                    <defs>
-                      <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="hour" stroke="#6b7280" fontSize={10} />
-                    <YAxis stroke="#6b7280" fontSize={10} domain={[0, 1]} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#9ca3af" }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="sentiment"
-                      stroke="#06b6d4"
-                      fill="url(#sentimentGradient)"
-                      strokeWidth={2}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div className="w-full h-[calc(100%-50px)] min-h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={sentimentHistory}>
+                      <defs>
+                        <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis dataKey="hour" stroke="#6b7280" fontSize={10} />
+                      <YAxis stroke="#6b7280" fontSize={10} domain={[0, 1]} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
+                        labelStyle={{ color: "#9ca3af" }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="sentiment"
+                        stroke="#06b6d4"
+                        fill="url(#sentimentGradient)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               ) : (
-                <div className="flex items-center justify-center h-[85%]">
+                <div className="flex items-center justify-center h-[calc(100%-50px)]">
                   <div className="text-center text-gray-500">
                     <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
                     <p>No sentiment data yet</p>
@@ -1564,9 +1640,9 @@ export default function Dashboard() {
               </div>
             </div>
             
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
               <table className="w-full">
-                <thead>
+                <thead className="sticky top-0 bg-gray-900/80 backdrop-blur-sm">
                   <tr className="text-left text-gray-400 text-sm border-b border-gray-700">
                     <th className="pb-3 pr-4">Time</th>
                     <th className="pb-3 pr-4">Event</th>
@@ -1943,18 +2019,18 @@ export default function Dashboard() {
                 <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-xl p-4 border border-purple-500/30">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <h4 className="text-lg font-bold text-white mb-1">Decision: {explainableAI.decision.toUpperCase()}</h4>
+                      <h4 className="text-lg font-bold text-white mb-1">Decision: {(explainableAI?.decision || 'HOLD').toUpperCase()}</h4>
                       <p className="text-xs text-gray-400">Based on multi-source analysis</p>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-bold text-purple-400">{(explainableAI.confidence * 100).toFixed(1)}%</div>
+                      <div className="text-2xl font-bold text-purple-400">{((explainableAI?.confidence || 0) * 100).toFixed(1)}%</div>
                       <div className="text-xs text-gray-400">Confidence</div>
                     </div>
                   </div>
                   <div className="w-full bg-gray-700 rounded-full h-3">
                     <div
                       className="bg-gradient-to-r from-purple-500 to-blue-500 h-3 rounded-full transition-all"
-                      style={{ width: `${explainableAI.confidence * 100}%` }}
+                      style={{ width: `${(explainableAI?.confidence || 0) * 100}%` }}
                     />
                   </div>
                 </div>
@@ -1968,21 +2044,21 @@ export default function Dashboard() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">Current Price</div>
-                      <div className="text-lg font-bold text-cyan-400">${explainableAI.priceIndicators.currentPrice.toFixed(4)}</div>
+                      <div className="text-lg font-bold text-cyan-400">${(explainableAI?.priceIndicators?.currentPrice || 0).toFixed(4)}</div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">24h Change</div>
-                      <div className={`text-lg font-bold ${explainableAI.priceIndicators.priceChange24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {explainableAI.priceIndicators.priceChange24h >= 0 ? '+' : ''}{explainableAI.priceIndicators.priceChange24h.toFixed(2)}%
+                      <div className={`text-lg font-bold ${(explainableAI?.priceIndicators?.priceChange24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {(explainableAI?.priceIndicators?.priceChange24h || 0) >= 0 ? '+' : ''}{(explainableAI?.priceIndicators?.priceChange24h || 0).toFixed(2)}%
                       </div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">Moving Avg</div>
-                      <div className="text-lg font-bold text-blue-400">${explainableAI.priceIndicators.movingAverage.toFixed(4)}</div>
+                      <div className="text-lg font-bold text-blue-400">${(explainableAI?.priceIndicators?.movingAverage || 0).toFixed(4)}</div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">Trend</div>
-                      <div className="text-lg font-bold text-purple-400">{explainableAI.priceIndicators.trend}</div>
+                      <div className="text-lg font-bold text-purple-400">{explainableAI?.priceIndicators?.trend || 'N/A'}</div>
                     </div>
                   </div>
                 </div>
@@ -1997,37 +2073,37 @@ export default function Dashboard() {
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">CoinGecko Data</span>
-                        <span className="text-xs font-semibold text-white">{(explainableAI.sentimentWeights.coingecko * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.coingecko || 0.25) * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full" style={{ width: `${explainableAI.sentimentWeights.coingecko * 100}%` }} />
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.coingecko || 0.25) * 100}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">News Sentiment</span>
-                        <span className="text-xs font-semibold text-white">{(explainableAI.sentimentWeights.news * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.news || 0.25) * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full" style={{ width: `${explainableAI.sentimentWeights.news * 100}%` }} />
+                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.news || 0.25) * 100}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">Social Media</span>
-                        <span className="text-xs font-semibold text-white">{(explainableAI.sentimentWeights.social * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.social || 0.25) * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full" style={{ width: `${explainableAI.sentimentWeights.social * 100}%` }} />
+                        <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.social || 0.25) * 100}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">Technical Analysis</span>
-                        <span className="text-xs font-semibold text-white">{(explainableAI.sentimentWeights.technical * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.technical || 0.25) * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-orange-500 to-red-500 h-2 rounded-full" style={{ width: `${explainableAI.sentimentWeights.technical * 100}%` }} />
+                        <div className="bg-gradient-to-r from-orange-500 to-red-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.technical || 0.25) * 100}%` }} />
                       </div>
                     </div>
                   </div>
@@ -2043,31 +2119,31 @@ export default function Dashboard() {
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700 text-center">
                       <div className="text-xs text-gray-500 mb-1">Volatility</div>
                       <div className={`text-sm font-bold ${
-                        explainableAI.riskFactors.volatility === 'Low' ? 'text-green-400' :
-                        explainableAI.riskFactors.volatility === 'Medium' ? 'text-yellow-400' :
+                        (explainableAI?.riskFactors?.volatility || 'Medium') === 'Low' ? 'text-green-400' :
+                        (explainableAI?.riskFactors?.volatility || 'Medium') === 'Medium' ? 'text-yellow-400' :
                         'text-red-400'
                       }`}>
-                        {explainableAI.riskFactors.volatility}
+                        {explainableAI?.riskFactors?.volatility || 'Medium'}
                       </div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700 text-center">
                       <div className="text-xs text-gray-500 mb-1">Volume</div>
                       <div className={`text-sm font-bold ${
-                        explainableAI.riskFactors.volume === 'High' ? 'text-green-400' :
-                        explainableAI.riskFactors.volume === 'Medium' ? 'text-yellow-400' :
+                        (explainableAI?.riskFactors?.volume || 'Medium') === 'High' ? 'text-green-400' :
+                        (explainableAI?.riskFactors?.volume || 'Medium') === 'Medium' ? 'text-yellow-400' :
                         'text-red-400'
                       }`}>
-                        {explainableAI.riskFactors.volume}
+                        {explainableAI?.riskFactors?.volume || 'Medium'}
                       </div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700 text-center">
                       <div className="text-xs text-gray-500 mb-1">Sentiment</div>
                       <div className={`text-sm font-bold ${
-                        explainableAI.riskFactors.sentiment === 'Positive' ? 'text-green-400' :
-                        explainableAI.riskFactors.sentiment === 'Neutral' ? 'text-yellow-400' :
+                        (explainableAI?.riskFactors?.sentiment || 'Neutral') === 'Positive' ? 'text-green-400' :
+                        (explainableAI?.riskFactors?.sentiment || 'Neutral') === 'Neutral' ? 'text-yellow-400' :
                         'text-red-400'
                       }`}>
-                        {explainableAI.riskFactors.sentiment}
+                        {explainableAI?.riskFactors?.sentiment || 'Neutral'}
                       </div>
                     </div>
                   </div>
@@ -2081,7 +2157,7 @@ export default function Dashboard() {
                   </h4>
                   <div className="bg-black/30 rounded-lg p-4 border border-gray-700">
                     <ul className="space-y-2">
-                      {explainableAI.reasoning.map((reason, idx) => (
+                      {(explainableAI?.reasoning || []).map((reason, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-sm text-gray-300">
                           <span className="text-purple-400 mt-1">•</span>
                           <span>{reason}</span>

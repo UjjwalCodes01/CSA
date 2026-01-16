@@ -1,0 +1,82 @@
+{
+  "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94": [
+    {
+      "id": "manual_trade_1768501562091",
+      "txHash": "manual_trade_1768501562091",
+      "timestamp": "2026-01-15T18:26:02.092Z",
+      "type": "BUY",
+      "tokenIn": "TCRO",
+      "tokenOut": "WCRO",
+      "amountIn": "0.1",
+      "amountOut": "0.0980",
+      "status": "completed",
+      "gasFee": "0.001",
+      "walletAddress": "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"
+    },
+    {
+      "id": "manual_trade_1768498073339",
+      "txHash": "manual_trade_1768498073339",
+      "timestamp": "2026-01-15T17:27:53.340Z",
+      "type": "BUY",
+      "tokenIn": "TCRO",
+      "tokenOut": "WCRO",
+      "amountIn": "0.1",
+      "amountOut": "0.0980",
+      "status": "completed",
+      "gasFee": "0.001",
+      "walletAddress": "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"
+    },
+    {
+      "id": "manual_trade_1768497586246",
+      "txHash": "manual_trade_1768497586246",
+      "timestamp": "2026-01-15T17:19:46.246Z",
+      "type": "BUY",
+      "tokenIn": "TCRO",
+      "tokenOut": "WCRO",
+      "amountIn": "0.4",
+      "amountOut": "0.3920",
+      "status": "completed",
+      "gasFee": "0.001",
+      "walletAddress": "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"
+    },
+    {
+      "id": "manual_trade_1768496890462",
+      "txHash": "manual_trade_1768496890462",
+      "timestamp": "2026-01-15T17:08:10.462Z",
+      "type": "BUY",
+      "tokenIn": "TCRO",
+      "tokenOut": "WCRO",
+      "amountIn": "0.1",
+      "amountOut": "0.0980",
+      "status": "completed",
+      "gasFee": "0.001",
+      "walletAddress": "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"
+    },
+    {
+      "id": "manual_trade_1768496261580",
+      "txHash": "manual_trade_1768496261580",
+      "timestamp": "2026-01-15T16:57:41.581Z",
+      "type": "BUY",
+      "tokenIn": "TCRO",
+      "tokenOut": "WCRO",
+      "amountIn": "0.5",
+      "amountOut": "0.4900",
+      "status": "completed",
+      "gasFee": "0.001",
+      "walletAddress": "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"
+    },
+    {
+      "id": "manual_trade_1768489575181",
+      "txHash": "manual_trade_1768489575181",
+      "timestamp": "2026-01-15T15:06:15.181Z",
+      "type": "BUY",
+      "tokenIn": "TCRO",
+      "tokenOut": "WCRO",
+      "amountIn": "0.1",
+      "amountOut": "0.0980",
+      "status": "completed",
+      "gasFee": "0.001",
+      "walletAddress": "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"
+    }
+  ]
+}

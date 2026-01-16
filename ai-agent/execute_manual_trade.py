@@ -3,6 +3,7 @@ Manual Trade Execution - CLI Tool
 Execute a test trade to verify dashboard updates
 """
 import os
+import asyncio
 from datetime import datetime
 from web3 import Web3
 from eth_account import Account
@@ -11,6 +12,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backend_client import BackendClient
+from src.services.x402_payment import get_x402_client
+
+# Initialize x402 payment client
+x402 = get_x402_client()
 
 # Contract ABIs
 ROUTER_ABI = [
@@ -211,6 +216,24 @@ def main():
     # Execute trade
     print("\n🔄 Executing trade...")
     print("-"*60)
+    
+    # 💳 X402 Payment: Pay for trade execution service
+    print("\n💳 Processing x402 payment for trade execution...")
+    trade_payment = asyncio.run(x402.pay_for_trade_execution({
+        'direction': direction,
+        'amount': amount_float,
+        'tokenIn': token_in,
+        'tokenOut': token_out,
+    }))
+    
+    if not x402.is_authorized(trade_payment):
+        print(f"❌ X402 payment failed - trade execution not authorized")
+        print(f"   Error: {trade_payment.get('error', 'Payment processing failed')}")
+        return
+    
+    print(f"✅ X402 payment successful!")
+    print(f"   Cost: {trade_payment.get('cost', 0)} CRO")
+    print(f"   TX: {trade_payment.get('payment', {}).get('txHash', 'N/A')[:16]}...")
     
     try:
         # Convert to Wei

@@ -21,6 +21,7 @@ import { ethers } from 'ethers';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import { getX402Service, PRICING as X402_PRICING } from './services/x402-payment-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -201,7 +202,71 @@ app.get('/api/market/sentiment', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch sentiment' });
   }
 });
+// Get market price comparison (CDC vs other sources)
+app.get('/api/market/price/compare', async (req, res) => {
+  try {
+    res.json({
+      message: 'Price comparison data not available',
+      status: 'no_data'
+    });
+  } catch (error) {
+    console.error('Error getting price comparison:', error);
+    res.status(500).json({ error: 'Failed to get price comparison' });
+  }
+});
 
+// Get CDC specific price data
+app.get('/api/market/price/cdc', async (req, res) => {
+  try {
+    res.json({
+      message: 'CDC price data not available',
+      status: 'no_data'
+    });
+  } catch (error) {
+    console.error('Error getting CDC price:', error);
+    res.status(500).json({ error: 'Failed to get CDC price data' });
+  }
+});
+
+// Get explainable AI data (agent decision reasoning)
+app.get('/api/agent/explainable-ai', async (req, res) => {
+  try {
+    res.json({
+      message: 'Explainable AI data not available',
+      status: 'no_data'
+    });
+  } catch (error) {
+    console.error('Error getting explainable AI data:', error);
+    res.status(500).json({ error: 'Failed to get explainable AI data' });
+  }
+});
+
+// Get blockchain events
+app.get('/api/blockchain/events', async (req, res) => {
+  try {
+    res.json({
+      events: [],
+      total: 0,
+      message: 'No blockchain events recorded yet'
+    });
+  } catch (error) {
+    console.error('Error getting blockchain events:', error);
+    res.status(500).json({ error: 'Failed to get blockchain events' });
+  }
+});
+
+// Get blockchain statistics
+app.get('/api/blockchain/stats', async (req, res) => {
+  try {
+    res.json({
+      message: 'Blockchain statistics not available',
+      status: 'no_data'
+    });
+  } catch (error) {
+    console.error('Error getting blockchain stats:', error);
+    res.status(500).json({ error: 'Failed to get blockchain statistics' });
+  }
+});
 // Get trade history
 app.get('/api/trades/history', async (req, res) => {
   try {
@@ -433,6 +498,90 @@ app.post('/api/trades/approve', async (req, res) => {
   } catch (error) {
     console.error('Error approving trade:', error);
     res.status(500).json({ error: 'Failed to approve trade' });
+  }
+});
+
+// Manual trade execution (user-initiated)
+app.post('/api/trades/manual', async (req, res) => {
+  try {
+    const { symbol, amount, side, leverage } = req.body;
+    
+    // Validate inputs
+    if (!symbol || !amount || !side) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required fields: symbol, amount, side' 
+      });
+    }
+
+    const tradeId = `manual_${Date.now()}`;
+    
+    // Create manual trade record
+    const manualTrade = {
+      id: tradeId,
+      type: 'manual',
+      symbol: symbol.toUpperCase(),
+      amount: parseFloat(amount),
+      side: side.toLowerCase(), // 'buy' or 'sell'
+      leverage: leverage ? parseFloat(leverage) : 1,
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      executedPrice: null,
+      executedAmount: null,
+      agent: 'user_manual'
+    };
+
+    // Add to trade history
+    agentState.tradeHistory.push(manualTrade);
+
+    // Make x402 payment for trade execution (0.002 CRO)
+    try {
+      const x402Payment = await x402PaymentService.payForTradeExecution({
+        tradeId,
+        symbol,
+        amount,
+        side
+      });
+      
+      console.log(`✅ Manual trade payment successful: ${tradeId}`);
+      manualTrade.x402Payment = x402Payment;
+    } catch (x402Error) {
+      console.warn(`⚠️  x402 payment for manual trade failed: ${x402Error.message}`);
+      manualTrade.x402Payment = { success: false, error: x402Error.message };
+    }
+
+    // Simulate execution
+    setTimeout(() => {
+      manualTrade.status = 'executed';
+      manualTrade.executedPrice = (Math.random() * 0.2 + 0.015).toFixed(6);
+      manualTrade.executedAmount = manualTrade.amount;
+
+      // Broadcast execution
+      broadcastToAll({
+        type: 'trade_executed',
+        data: manualTrade
+      });
+    }, 1000);
+
+    // Broadcast creation
+    broadcastToAll({
+      type: 'trade_created',
+      data: manualTrade
+    });
+
+    res.json({
+      success: true,
+      trade: manualTrade,
+      message: `Manual ${side} trade created: ${symbol} x${amount}`
+    });
+
+  } catch (error) {
+    console.error('Manual trade error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to create manual trade',
+      details: error.message 
+    });
   }
 });
 
@@ -744,6 +893,76 @@ setInterval(() => {
     Math.abs(parseFloat(sentimentScore))
   );
 }, 30000);
+
+// ============================================================================
+// X402 PAYMENT ENDPOINTS
+// ============================================================================
+
+// Initialize x402 service
+const x402Service = getX402Service();
+
+// Get x402 pricing
+app.get('/api/x402/pricing', (req, res) => {
+  res.json({
+    pricing: X402_PRICING,
+    currency: 'CRO'
+  });
+});
+
+// Get x402 payment history
+app.get('/api/x402/payments', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const history = x402Service.getPaymentHistory(limit);
+    
+    res.json({
+      payments: history,
+      total: history.length,
+      totalSpent: x402Service.getTotalPayments()
+    });
+  } catch (error) {
+    console.error('Error fetching x402 payments:', error);
+    res.status(500).json({ error: 'Failed to fetch payment history' });
+  }
+});
+
+// Estimate x402 cost for operation
+app.post('/api/x402/estimate', (req, res) => {
+  try {
+    const { operations } = req.body;
+    const cost = x402Service.estimateCost(operations);
+    
+    res.json({
+      cost,
+      currency: 'CRO',
+      operations
+    });
+  } catch (error) {
+    console.error('Error estimating cost:', error);
+    res.status(500).json({ error: 'Failed to estimate cost' });
+  }
+});
+
+// Process x402 payment for service
+app.post('/api/x402/pay', async (req, res) => {
+  try {
+    const { serviceType, metadata } = req.body;
+    
+    if (!serviceType) {
+      return res.status(400).json({ success: false, error: 'Service type required' });
+    }
+    
+    const payment = await x402Service.processPayment(serviceType, metadata);
+    
+    res.json({
+      success: true,
+      payment: payment
+    });
+  } catch (error) {
+    console.error('Error processing x402 payment:', error);
+    res.status(500).json({ success: false, error: 'Failed to process payment' });
+  }
+});
 
 // ============================================================================
 // START SERVER

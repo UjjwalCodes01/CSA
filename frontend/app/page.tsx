@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect } from "react";
+import React, { useEffect , useState } from "react";
 import { Vortex } from "@/components/ui/vortex";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
@@ -14,15 +14,32 @@ export default function LandingPage() {
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
 
-  // Show success toast when wallet connects
+  // Track if we've already shown the connect toast this session
+  const [hasShownConnectToast, setHasShownConnectToast] = useState(() => {
+    // Use sessionStorage to prevent toast spam on page refresh
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('walletConnectToastShown') === 'true';
+    }
+    return false;
+  });
+
+  // Show success toast only once when wallet connects (not on page refresh)
   useEffect(() => {
-    if (isConnected && address) {
+    if (isConnected && address && !hasShownConnectToast) {
       toast.success(`Wallet connected successfully!`, {
         duration: 3000,
         icon: '🎉',
       });
+      setHasShownConnectToast(true);
+      sessionStorage.setItem('walletConnectToastShown', 'true');
     }
-  }, [isConnected, address]);
+    
+    // Clear flag when wallet disconnects
+    if (!isConnected && hasShownConnectToast) {
+      setHasShownConnectToast(false);
+      sessionStorage.removeItem('walletConnectToastShown');
+    }
+  }, [isConnected, address, hasShownConnectToast]);
 
   const handleConnect = async () => {
     try {

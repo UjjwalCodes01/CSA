@@ -20,12 +20,16 @@ from agents.market_data_agent import MARKET_DATA_TOOLS_PRO
 from agents.sentinel_agent import SENTINEL_TOOLS
 from agents.executioner_agent import EXECUTIONER_TOOLS
 from monitoring.sentiment_aggregator import SentimentAggregator
+from services.x402_payment import get_x402_client
 
 # Import backend client for real-time dashboard updates
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from backend_client import BackendClient
 
 load_dotenv()
+
+# Initialize x402 payment client
+x402 = get_x402_client()
 
 # Autonomous Agent Personality
 AUTONOMOUS_PERSONALITY = {
@@ -150,6 +154,16 @@ class AutonomousTrader:
         # 2. Get latest multi-source sentiment
         signal = self.sentiment_aggregator.aggregate_sentiment("crypto-com-chain")
         
+        # 💳 X402 Payment: Pay for sentiment analysis service
+        import asyncio
+        sentiment_payment = asyncio.run(x402.pay_for_sentiment_analysis(
+            sources=len(signal.get('sources', []))
+        ))
+        
+        if not x402.is_authorized(sentiment_payment):
+            print(f"❌ X402 payment failed - sentiment analysis not authorized")
+            return {"action": "hold", "reason": "Payment authorization failed"}
+        
         print(f"\n📊 Multi-Source Signal: {signal['signal']}")
         print(f"📊 Sentiment Score: {signal.get('avg_sentiment', 0):.3f}")
         print(f"💪 Strength: {signal.get('strength', 0)}")
@@ -184,6 +198,17 @@ Do not ask for confirmation - just execute if conditions are favorable.
         
         # 4. Let agent decide and potentially execute
         try:
+            # 💳 X402 Payment: Pay for AI decision making service
+            ai_decision_payment = asyncio.run(x402.pay_for_ai_decision({
+                'signal': signal['signal'],
+                'sentiment': signal.get('avg_sentiment', 0),
+                'confidence': signal.get('strength', 0) / 4.0,
+            }))
+            
+            if not x402.is_authorized(ai_decision_payment):
+                print(f"❌ X402 payment failed - AI decision not authorized")
+                return {"action": "hold", "reason": "AI service payment failed"}
+            
             response = self.agent.interact(prompt)
             print(f"\n🤖 Agent Decision:\n{response}")
             

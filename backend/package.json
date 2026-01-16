@@ -25,7 +25,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@crypto.com/facilitator-client": "^1.0.2",
+    "@crypto.com/facilitator-client": "^1.0.4",
     "axios": "^1.13.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
