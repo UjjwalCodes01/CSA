@@ -315,3 +315,50 @@ Council Consensus: buy (confidence: 0.70)
   🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy and sentiment is positive, the lack of trending or volume spike and o
   📊 Market Analyst: buy (0.70) - The strong buy signal and positive sentiment score suggest a buying opportunity, but the lack of tre
   ⚡ Execution Specialist: strong_buy (0.80) - Strong buy signal with good sentiment; capitalize on the momentum now.
+
+============================================================
+Time: 2026-01-17 20:04:10
+Signal: strong_buy (3)
+Sentiment: 0.650
+Trending: False
+Council Consensus: buy (confidence: 0.70)
+
+============================================================
+Time: 2026-01-17 20:11:32
+Signal: strong_buy (3)
+Sentiment: 0.657
+Trending: False
+Council Consensus: buy (confidence: 0.70)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending or volume spike and only moderate sentiment sco
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
+  ⚡ Execution Specialist: strong_buy (0.80) - Strong buy signal indicates immediate action is needed to capitalize on the potential upside.
+
+============================================================
+Time: 2026-01-17 20:26:52
+Signal: strong_buy (3)
+Sentiment: 0.621
+Trending: False
+Council Consensus: buy (confidence: 0.70)
+  🛡️ Risk Manager: hold (0.60) - The signal is strong_buy, but the lack of a clear trend and volume spike, along with a moderate sent
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
+  ⚡ Execution Specialist: strong_buy (0.80) - Capitalize on the strong buy signal now for maximum profit potential.
+
+============================================================
+Time: 2026-01-17 20:42:47
+Signal: strong_buy (3)
+Sentiment: 0.654
+Trending: False
+Council Consensus: buy (confidence: 0.70)
+  🛡️ Risk Manager: hold (0.60) - Despite the strong_buy signal, the absence of a trend and volume spike, coupled with a moderate sent
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
+  ⚡ Execution Specialist: strong_buy (0.80) - The persistence of a strong buy signal warrants immediate action to secure gains.
+
+============================================================
+Time: 2026-01-17 20:58:28
+Signal: strong_buy (3)
+Sentiment: 0.612
+Trending: False
+Council Consensus: buy (confidence: 0.70)
+  🛡️ Risk Manager: hold (0.60) - The strong_buy signal is undermined by the lack of a trend or volume spike and a moderate sentiment 
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
+  ⚡ Execution Specialist: strong_buy (0.80) - Execute immediately on the strong buy signal to maximize potential returns.

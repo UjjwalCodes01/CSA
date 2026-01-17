@@ -535,20 +535,31 @@ app.post('/api/trades/execute', async (req, res) => {
   try {
     const { txHash, tokenIn, tokenOut, amountIn, amountOut, type, status, timestamp } = req.body;
     
+    // Calculate P&L based on amount difference and gas
+    const gasCost = 0.0002;
+    const amountInNum = parseFloat(amountIn) || 0;
+    const amountOutNum = parseFloat(amountOut) || 0;
+    const profitLoss = amountOutNum - amountInNum - gasCost;
+    
     const trade = {
       id: txHash,
       txHash,
       timestamp: timestamp || new Date().toISOString(),
       type: type || 'BUY',
+      action: (type || 'BUY').toLowerCase(),
       tokenIn: tokenIn || 'TCRO',
       tokenOut: tokenOut || 'WCRO',
       amountIn: amountIn || '0',
       amountOut: amountOut || '0',
+      amount: amountInNum,
       status: status || 'completed',
-      gasFee: '0.001'
+      gasFee: '0.001',
+      profit_loss: profitLoss,
+      sentiment_score: 0.5,
+      confidence: 0.7
     };
     
-    console.log(`📝 Trade executed: ${type} ${amountIn} ${tokenIn} → ${tokenOut}`);
+    console.log(`📝 Trade executed: ${type} ${amountIn} ${tokenIn} → ${tokenOut} (P&L: ${profitLoss.toFixed(6)})`);
     
     // Add to trade history and broadcast
     broadcastTradeEvent(trade);
@@ -612,22 +623,43 @@ app.post('/api/trades/manual', async (req, res) => {
 
     const tradeId = txHash || `manual_${Date.now()}`;
     
+    // Calculate P&L (profit/loss in TCRO)
+    // For wrap/unwrap, gas fees are the main cost
+    const gasCost = 0.0002; // ~0.0002 TCRO gas fee
+    const tradeAmount = parseFloat(amount);
+    
+    // Simple P&L: buy incurs gas cost, we track it as small negative
+    // In a real system, you'd track entry/exit prices for true P&L
+    let profitLoss = 0;
+    if (realTransaction) {
+      // Real transactions: account for gas fees only (wrap/unwrap is 1:1 minus gas)
+      profitLoss = -gasCost;
+    } else {
+      // Simulated: random P&L between -2% to +3% of trade amount
+      const pnlPercent = (Math.random() * 0.05 - 0.02); // -2% to +3%
+      profitLoss = tradeAmount * pnlPercent;
+    }
+    
     // Create manual trade record
     const manualTrade = {
       id: tradeId,
       type: 'manual',
       symbol: symbol.toUpperCase(),
-      amount: parseFloat(amount),
+      amount: tradeAmount,
       side: side.toLowerCase(), // 'buy' or 'sell'
       leverage: leverage ? parseFloat(leverage) : 1,
       timestamp: new Date().toISOString(),
       status: realTransaction ? 'executed' : 'simulated',
       executedPrice: realTransaction ? 'on-chain' : (Math.random() * 0.2 + 0.015).toFixed(6),
-      executedAmount: parseFloat(amount),
+      executedAmount: tradeAmount,
       agent: `user_${walletAddress ? walletAddress.slice(0, 8) : 'unknown'}`,
       walletAddress: walletAddress || 'unknown',
       txHash: txHash || null,
-      realTransaction: realTransaction || false
+      realTransaction: realTransaction || false,
+      profit_loss: profitLoss,
+      action: side.toLowerCase(), // 'buy' or 'sell' for frontend compatibility
+      sentiment_score: 0.5, // neutral for manual trades
+      confidence: 1.0 // user-initiated = 100% confidence
     };
 
     // Add to trade history

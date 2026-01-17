@@ -28,7 +28,7 @@ export default function LandingPage() {
     if (isConnected && address && !hasShownConnectToast) {
       toast.success(`Wallet connected successfully!`, {
         duration: 3000,
-        icon: '🎉',
+        icon: '',
       });
       setHasShownConnectToast(true);
       sessionStorage.setItem('walletConnectToastShown', 'true');
@@ -57,7 +57,7 @@ export default function LandingPage() {
       console.error("Failed to connect wallet:", error);
       toast.error("Failed to connect wallet", {
         duration: 3000,
-        icon: '❌',
+        icon: '',
       });
     }
   };
@@ -65,18 +65,18 @@ export default function LandingPage() {
   const handleDisconnect = () => {
     disconnect();
     toast.success("Wallet disconnected", {
-      icon: '👋',
+      icon: '',
     });
   };
 
   const handleLaunchTerminal = () => {
     if (isConnected) {
-      toast.success("Loading dashboard...", { icon: '🚀' });
+      toast.success("Loading dashboard...", { icon: '' });
       router.push("/dashboard");
     } else {
       toast.error("Please connect your wallet first to access the dashboard", {
         duration: 4000,
-        icon: '🔐',
+        icon: '',
       });
     }
   };
@@ -151,16 +151,6 @@ export default function LandingPage() {
           transition={{ duration: 0.8 }}
           className="text-center"
         >
-          {/* Status Badge */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2 }}
-            className="inline-flex items-center gap-2 px-4 py-2 mb-6 bg-blue-900/20 backdrop-blur-sm border border-blue-500/30 rounded-full"
-          >
-            <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
-            <span className="text-blue-200 text-sm font-medium">Cronos Testnet • Live</span>
-          </motion.div>
 
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}

@@ -197,6 +197,17 @@ export function useWrapCRO() {
   const { writeContract, data: hash, isPending, error: writeError } = useWriteContract();
 
   const wrap = (amount: string) => {
+    console.log('🔧 useWrapCRO.wrap() called with:', {
+      amount,
+      wcroAddress: CONTRACTS.wcro,
+      valueWei: parseEther(amount).toString()
+    });
+    
+    if (!CONTRACTS.wcro) {
+      console.error('❌ WCRO address not configured!');
+      throw new Error('WCRO address not configured');
+    }
+    
     writeContract({
       address: CONTRACTS.wcro,
       abi: [
@@ -211,6 +222,8 @@ export function useWrapCRO() {
       functionName: 'deposit',
       value: parseEther(amount),
     });
+    
+    console.log('📤 writeContract called for deposit');
   };
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({

@@ -244,6 +244,23 @@ export default function Dashboard() {
   const approveToken = useApproveToken();
   const swapTokens = useSwapTokens();
   
+  // Monitor wrap/unwrap errors in real-time
+  useEffect(() => {
+    if (wrapCRO.error) {
+      console.error('🚨 wrapCRO error detected:', wrapCRO.error);
+      toast.error(`Wrap failed: ${wrapCRO.error.message}`, { id: 'wrap-toast' });
+      setIsExecutingTrade(false);
+    }
+  }, [wrapCRO.error]);
+  
+  useEffect(() => {
+    if (unwrapWCRO.error) {
+      console.error('🚨 unwrapWCRO error detected:', unwrapWCRO.error);
+      toast.error(`Unwrap failed: ${unwrapWCRO.error.message}`, { id: 'unwrap-toast' });
+      setIsExecutingTrade(false);
+    }
+  }, [unwrapWCRO.error]);
+  
   // Track if component is mounted to prevent hydration mismatch
   const [mounted, setMounted] = useState(false);
   
@@ -897,7 +914,7 @@ export default function Dashboard() {
     if (!API_BASE) return;
     
     // Check if wallet is connected
-    if (!address) {
+    if (!address || !isConnected) {
       toast.error('Please connect your wallet first');
       return;
     }
@@ -910,6 +927,11 @@ export default function Dashboard() {
 
     const amount = parseFloat(manualTradeAmount);
     const isBuy = manualTradeDirection.toLowerCase() === 'buy';
+    
+    console.log(`🔄 Manual trade requested: ${isBuy ? 'BUY' : 'SELL'} ${amount} ${isBuy ? 'WCRO' : 'CRO'}`);
+    console.log(`   Wallet: ${address}`);
+    console.log(`   TCRO Balance: ${tcroBalance.balance}`);
+    console.log(`   WCRO Balance: ${wcroBalance.balance}`);
     
     setIsExecutingTrade(true);
     setTxInitiated(false);
@@ -943,15 +965,18 @@ export default function Dashboard() {
           return;
         }
         
+        console.log(`📝 Initiating wrap transaction: ${amount} CRO → WCRO`);
         toast.loading('Preparing transaction...', { id: 'wrap-toast' });
         
         try {
           // Execute wrap transaction
+          console.log('Calling wrapCRO.wrap()...');
           wrapCRO.wrap(amount.toString());
+          console.log('✅ Wrap function called, waiting for MetaMask...');
           setTxInitiated(true);
           toast.loading('Waiting for MetaMask confirmation...', { id: 'wrap-toast' });
         } catch (err: any) {
-          console.error('Wrap error:', err);
+          console.error('❌ Wrap error:', err);
           toast.error(err.message || 'Failed to prepare transaction', { id: 'wrap-toast' });
           setIsExecutingTrade(false);
           return;
@@ -965,15 +990,18 @@ export default function Dashboard() {
           return;
         }
         
+        console.log(`📝 Initiating unwrap transaction: ${amount} WCRO → CRO`);
         toast.loading('Preparing transaction...', { id: 'unwrap-toast' });
         
         try {
           // Execute unwrap transaction
+          console.log('Calling unwrapWCRO.unwrap()...');
           unwrapWCRO.unwrap(amount.toString());
+          console.log('✅ Unwrap function called, waiting for MetaMask...');
           setTxInitiated(true);
           toast.loading('Waiting for MetaMask confirmation...', { id: 'unwrap-toast' });
         } catch (err: any) {
-          console.error('Unwrap error:', err);
+          console.error('❌ Unwrap error:', err);
           toast.error(err.message || 'Failed to prepare transaction', { id: 'unwrap-toast' });
           setIsExecutingTrade(false);
           return;

@@ -326,7 +326,7 @@ class AutonomousTrader:
                 print(f"\n⏸️  No trade executed: {consensus.upper()} (confidence: {confidence:.2f} < 0.65 threshold)")
             
             # Save to file
-            with open("autonomous_trade_log.txt", "a") as f:
+            with open("autonomous_trade_log.txt", "a", encoding='utf-8') as f:
                 f.write(f"\n{'='*60}\n")
                 f.write(f"Time: {decision_log['timestamp']}\n")
                 f.write(f"Signal: {decision_log['signal']} ({decision_log['strength']})\n")
