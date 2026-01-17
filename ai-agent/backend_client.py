@@ -35,13 +35,36 @@ class BackendClient:
         except Exception as e:
             print(f"⚠️  Backend connection failed: {e}")
     
-    def send_sentiment_update(self, signal, score, sources, is_trending=False):
+    def send_council_votes(self, votes, consensus, confidence, agreement):
+        """Send multi-agent council votes to backend"""
+        try:
+            data = {
+                "votes": votes,
+                "consensus": consensus,
+                "confidence": float(confidence),
+                "agreement": agreement,
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            response = self.session.post(
+                f"{self.base_url}/council/votes",
+                json=data,
+                timeout=5
+            )
+            if response.ok:
+                print(f"✅ Council votes sent: {consensus}")
+            else:
+                print(f"⚠️  Failed to send council votes: {response.status_code}")
+        except Exception as e:
+            print(f"⚠️  Failed to send council votes: {e}")
+    
+    def send_sentiment_update(self, signal, score, sources, weights=None, is_trending=False):
         """Send sentiment update to backend"""
         try:
             data = {
                 "signal": signal,
                 "score": float(score),
                 "sources": sources,
+                "weights": weights or {"coingecko": 25, "news": 25, "social": 25, "technical": 25},
                 "is_trending": is_trending,
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }

@@ -5,6 +5,7 @@ This agent makes trading decisions 24/7 without human intervention
 import os
 import sys
 import time
+import requests
 import schedule
 from typing import Dict
 from datetime import datetime
@@ -19,6 +20,7 @@ from crypto_com_agent_client.lib.enums.provider_enum import Provider
 from agents.market_data_agent import MARKET_DATA_TOOLS_PRO
 from agents.sentinel_agent import SENTINEL_TOOLS
 from agents.executioner_agent import EXECUTIONER_TOOLS
+from agents.multi_agent_council import MultiAgentCouncil
 from monitoring.sentiment_aggregator import SentimentAggregator
 from services.x402_payment import get_x402_client
 
@@ -87,9 +89,13 @@ class AutonomousTrader:
     """24/7 autonomous trading system"""
     
     def __init__(self):
-        print("🤖 Initializing Autonomous Trader...")
+        print("🤖 Initializing Autonomous Trader with Multi-Agent Council...")
         self.sentiment_aggregator = SentimentAggregator()
-        self.agent = self._create_agent()
+        
+        # Initialize multi-agent council
+        all_tools = MARKET_DATA_TOOLS_PRO + SENTINEL_TOOLS + EXECUTIONER_TOOLS
+        self.council = MultiAgentCouncil(tools=all_tools)
+        
         self.trade_history = []
         self.consecutive_losses = 0
         self.is_active = True
@@ -102,38 +108,6 @@ class AutonomousTrader:
             print("⚠️  Backend not reachable - dashboard won't update")
         
         print("✅ Autonomous Trader ready!\n")
-        
-    def _create_agent(self):
-        """Initialize the autonomous agent"""
-        all_tools = MARKET_DATA_TOOLS_PRO + SENTINEL_TOOLS + EXECUTIONER_TOOLS
-        storage = SQLitePlugin(db_path="autonomous_agent.db")
-        
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        
-        llm_config = {
-            "provider": Provider.GoogleGenAI,
-            "model": "gemini-2.5-flash",
-            "provider-api-key": gemini_api_key,
-            "temperature": 0.3,
-        }
-        print("   Using Gemini AI Studio (gemini-2.5-flash)")
-        
-        agent = Agent.init(
-            llm_config=llm_config,
-            blockchain_config={
-                "api-key": os.getenv("DEVELOPER_PLATFORM_API_KEY"),
-                "private-key": os.getenv("PRIVATE_KEY"),
-                "timeout": 30,
-            },
-            plugins={
-                "personality": AUTONOMOUS_PERSONALITY,
-                "instructions": AUTONOMOUS_INSTRUCTIONS,
-                "tools": all_tools,
-                "storage": storage,
-            },
-        )
-        
-        return agent
     
     def make_trading_decision(self) -> Dict:
         """
@@ -155,71 +129,58 @@ class AutonomousTrader:
         signal = self.sentiment_aggregator.aggregate_sentiment("crypto-com-chain")
         
         # 💳 X402 Payment: Pay for sentiment analysis service
-        import asyncio
-        sentiment_payment = asyncio.run(x402.pay_for_sentiment_analysis(
+        sentiment_payment = x402.pay_for_sentiment_analysis(
             sources=len(signal.get('sources', []))
-        ))
+        )
         
         if not x402.is_authorized(sentiment_payment):
             print(f"❌ X402 payment failed - sentiment analysis not authorized")
             return {"action": "hold", "reason": "Payment authorization failed"}
         
-        print(f"\n📊 Multi-Source Signal: {signal['signal']}")
-        print(f"📊 Sentiment Score: {signal.get('avg_sentiment', 0):.3f}")
-        print(f"💪 Strength: {signal.get('strength', 0)}")
-        
-        # 3. Build decision prompt for agent
-        prompt = f"""
-AUTONOMOUS TRADING DECISION REQUIRED:
-
-Multi-Source Sentiment: {signal['signal']} (strength: {signal.get('strength', 0)})
-Average Sentiment Score: {signal.get('avg_sentiment', 0):.3f}
-Trending Status: {'🔥 TRENDING' if signal.get('is_trending') else 'Not Trending'}
-Volume Spike: {signal.get('volume_spike', False)}
-Data Sources: {len(signal.get('sources', []))} (CoinGecko, Price Action)
-Reason: {signal.get('reason', 'N/A')}
-
-Current Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Consecutive Losses: {self.consecutive_losses}
-
-ANALYZE AND DECIDE:
-1. Check current CRO price and market conditions
-2. Check Sentinel status and available limit
-3. Check execution feasibility for potential swaps
-4. Based on the signal, decide whether to:
-   - Execute a swap (if strong_buy signal)
-   - Hold position (if weak/neutral signal)  
-   - Exit position (if strong_sell signal)
-5. Provide clear reasoning for your decision
-
-Remember: You have FULL AUTHORITY to execute trades within Sentinel limits.
-Do not ask for confirmation - just execute if conditions are favorable.
-"""
-        
-        # 4. Let agent decide and potentially execute
+        # 3. Get council voting decision
         try:
-            # 💳 X402 Payment: Pay for AI decision making service
-            ai_decision_payment = asyncio.run(x402.pay_for_ai_decision({
+            # 💳 X402 Payment: Pay for multi-agent council voting
+            council_payment = x402.pay_for_multi_agent_vote({
                 'signal': signal['signal'],
                 'sentiment': signal.get('avg_sentiment', 0),
                 'confidence': signal.get('strength', 0) / 4.0,
-            }))
+                'agents': 3
+            })
             
-            if not x402.is_authorized(ai_decision_payment):
-                print(f"❌ X402 payment failed - AI decision not authorized")
-                return {"action": "hold", "reason": "AI service payment failed"}
+            if not x402.is_authorized(council_payment):
+                print(f"❌ X402 payment failed - council voting not authorized")
+                return {"action": "hold", "reason": "Council voting payment failed"}
             
-            response = self.agent.interact(prompt)
-            print(f"\n🤖 Agent Decision:\n{response}")
+            # Get votes from 3 AI agents
+            council_result = self.council.vote_on_trade(
+                market_data={
+                    'signal': signal['signal'],
+                    'sentiment_score': signal.get('avg_sentiment', 0),
+                    'strength': signal.get('strength', 0)
+                },
+                sentiment_signal=signal
+            )
             
-            # Log decision
+            print(f"\n🗳️  Council Decision: {council_result['consensus'].upper()}")
+            print(f"💪 Confidence: {council_result['confidence']:.2f}")
+            print(f"📊 Votes:")
+            for vote in council_result['votes']:
+                print(f"   {vote['agent']}: {vote['vote'].upper()} ({vote['confidence']:.2f})")
+            
+            response = f"Council consensus: {council_result['consensus'].upper()} (confidence: {council_result['confidence']:.2f})"
+            print(f"\n🤖 Multi-Agent Decision:\n{response}")
+            
+            # Log decision with council votes
             decision_log = {
                 "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 "signal": signal['signal'],
                 "strength": signal.get('strength', 0),
                 "sentiment_score": signal.get('avg_sentiment', 0),
                 "is_trending": signal.get('is_trending', False),
-                "agent_response": response[:500],  # Truncate for storage
+                "council_votes": council_result['votes'],
+                "consensus": council_result['consensus'],
+                "confidence": council_result['confidence'],
+                "agent_response": response,
             }
             self.trade_history.append(decision_log)
             
@@ -230,36 +191,139 @@ Do not ask for confirmation - just execute if conditions are favorable.
                 
                 # Send sentiment update
                 sources_list = signal.get('sources', [])
+                weights = signal.get('weights', {"coingecko": 25, "news": 25, "social": 25, "technical": 25})
                 print(f"   → Sending sentiment: {signal['signal']} (score: {signal.get('avg_sentiment', 0):.2f})")
                 self.backend.send_sentiment_update(
                     signal=signal['signal'],
                     score=signal.get('avg_sentiment', 0),
                     sources=sources_list,
+                    weights=weights,
                     is_trending=signal.get('is_trending', False)
                 )
                 
+                # Send price update from CoinGecko data
+                coingecko_data = next((s for s in signal.get('sources', []) if s.get('source') == 'coingecko'), None)
+                if coingecko_data and coingecko_data.get('price'):
+                    price = coingecko_data['price']
+                    price_change = coingecko_data.get('price_change_24h', 0)
+                    print(f"   → Sending price: ${price:.4f} ({price_change:+.2f}%)")
+                    self.backend.send_price_update(
+                        price=price,
+                        change_24h=price_change
+                    )
+                
+                # Send council votes
+                print(f"   → Sending council votes: {council_result['consensus'].upper()}")
+                self.backend.send_council_votes(
+                    votes=council_result['votes'],
+                    consensus=council_result['consensus'],
+                    confidence=council_result['confidence'],
+                    agreement=council_result['agreement']
+                )
+                
                 # Send agent decision
-                market_info = f"Signal: {signal['signal']}, Sentiment: {signal.get('avg_sentiment', 0):.2f}, Sources: {len(sources_list)}"
-                print(f"   → Sending decision: {signal['signal'].upper()}")
+                market_info = f"Signal: {signal['signal']}, Consensus: {council_result['consensus'].upper()}, Confidence: {council_result['confidence']:.2f}"
+                print(f"   → Sending decision: {council_result['consensus'].upper()}")
                 self.backend.send_agent_decision(
                     market_data=market_info,
                     sentinel_status="Active monitoring",
-                    decision=signal['signal'].upper().replace('_', ' '),
-                    reason=response[:200]
+                    decision=council_result['consensus'].upper().replace('_', ' '),
+                    reason=f"Council vote: {council_result['agreement']}"
                 )
                 
                 # Send agent status
-                status = "analyzing" if "buy" in signal['signal'] or "sell" in signal['signal'] else "monitoring"
+                status = "analyzing" if "buy" in council_result['consensus'] or "sell" in council_result['consensus'] else "monitoring"
                 print(f"   → Sending status: {status}")
                 self.backend.send_agent_status(
                     status=status,
-                    action=f"Processed {signal['signal']} signal",
-                    confidence=abs(signal.get('avg_sentiment', 0))
+                    action=f"Council voted: {council_result['consensus'].upper()}",
+                    confidence=council_result['confidence']
                 )
                 print("✅ All updates sent to backend successfully!")
             else:
                 print("❌ Backend is offline - updates not sent")
                 print("   Make sure backend server is running on port 3001")
+            
+            # Execute trade based on council decision
+            consensus = council_result['consensus'].lower()
+            confidence = council_result['confidence']
+            
+            if consensus in ['strong_buy', 'buy'] and confidence >= 0.65:
+                print(f"\n💰 Executing BUY trade (confidence: {confidence:.2f})...")
+                try:
+                    from agents.executioner_agent import execute_swap_autonomous
+                    
+                    # Execute small test trade (0.1 CRO)
+                    trade_amount = 0.1
+                    min_output = trade_amount * 0.95  # 5% slippage tolerance
+                    reason = f"Council BUY decision: {council_result['agreement']}"
+                    
+                    # Use .invoke() method for LangChain tools
+                    result = execute_swap_autonomous.invoke({
+                        "amount_cro": trade_amount,
+                        "token_out": "WCRO",
+                        "min_output": min_output,
+                        "reason": reason
+                    })
+                    
+                    if isinstance(result, dict) and result.get('status') == 'success':
+                        print(f"✅ Trade executed successfully!")
+                        print(f"   Amount: {trade_amount} CRO → WCRO")
+                        print(f"   TX: {result.get('tx_hash', 'N/A')}")
+                        
+                        # Notify backend about successful trade
+                        try:
+                            print(f"   📡 Notifying frontend...")
+                            trade_notification = {
+                                "id": f"ai_trade_{int(time.time())}",
+                                "type": "autonomous",
+                                "symbol": "WCRO",
+                                "amount": trade_amount,
+                                "side": "buy",
+                                "status": "executed",
+                                "txHash": result.get('tx_hash'),
+                                "executedPrice": "on-chain",
+                                "executedAmount": trade_amount,
+                                "agent": "ai_autonomous",
+                                "walletAddress": os.getenv("AGENT_ADDRESS", "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"),
+                                "realTransaction": True,
+                                "reason": reason,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            
+                            trade_response = requests.post(
+                                "http://localhost:3001/api/trades/manual",
+                                json=trade_notification,
+                                timeout=5
+                            )
+                            
+                            if trade_response.status_code == 200:
+                                print(f"   ✅ Trade broadcasted to frontend")
+                            else:
+                                print(f"   ⚠️  Failed to broadcast trade: {trade_response.status_code}")
+                        except Exception as notify_err:
+                            print(f"   ⚠️  Trade notification failed: {notify_err}")
+                    else:
+                        error_msg = result.get('reason', str(result)) if isinstance(result, dict) else str(result)
+                        print(f"❌ Trade failed: {error_msg}")
+                except Exception as e:
+                    print(f"❌ Trade execution error: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            elif consensus in ['strong_sell', 'sell'] and confidence >= 0.65:
+                print(f"\n💰 Executing SELL trade (confidence: {confidence:.2f})...")
+                print(f"⚠️  Note: execute_swap_autonomous only supports CRO→Token swaps")
+                print(f"   WCRO→CRO swaps need to be implemented separately")
+                print(f"   Skipping trade execution for now...")
+                # TODO: Implement reverse swap or token approval logic for WCRO→CRO
+                # try:
+                #     from agents.executioner_agent import execute_swap_autonomous
+                #     # Need different function for reverse swaps
+                # except Exception as e:
+                #     print(f"❌ Trade execution error: {e}")
+            else:
+                print(f"\n⏸️  No trade executed: {consensus.upper()} (confidence: {confidence:.2f} < 0.65 threshold)")
             
             # Save to file
             with open("autonomous_trade_log.txt", "a") as f:
@@ -268,12 +332,16 @@ Do not ask for confirmation - just execute if conditions are favorable.
                 f.write(f"Signal: {decision_log['signal']} ({decision_log['strength']})\n")
                 f.write(f"Sentiment: {decision_log['sentiment_score']:.3f}\n")
                 f.write(f"Trending: {decision_log['is_trending']}\n")
-                f.write(f"Decision: {decision_log['agent_response']}\n")
+                f.write(f"Council Consensus: {decision_log['consensus']} (confidence: {decision_log['confidence']:.2f})\n")
+                for vote in council_result['votes']:
+                    f.write(f"  {vote['agent']}: {vote['vote']} ({vote['confidence']:.2f}) - {vote['reasoning'][:100]}\n")
             
             return decision_log
             
         except Exception as e:
             print(f"\n❌ Decision Error: {e}")
+            import traceback
+            traceback.print_exc()
             return {"action": "error", "reason": str(e)}
     
     def run_forever(self):

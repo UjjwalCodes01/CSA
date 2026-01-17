@@ -39,7 +39,7 @@ class SentimentAggregator:
             # Get coin data
             response = requests.get(
                 f"{self.coingecko_api}/coins/{coin_id}",
-                params={"localization": "false", "tickers": "false", "community_data": "true", "developer_data": "false"}
+                params={"localization": "false", "tickers": "false", "community_data": "true", "developer_data": "false", "market_data": "true"}
             )
             data = response.json()
             
@@ -54,12 +54,19 @@ class SentimentAggregator:
             # Calculate sentiment score (-1 to 1)
             sentiment_score = (sentiment_votes_up - 50) / 50  # Normalize to -1 to 1
             
+            # Extract price data
+            market_data = data.get("market_data", {})
+            current_price = market_data.get("current_price", {}).get("usd", 0)
+            price_change_24h = market_data.get("price_change_percentage_24h", 0)
+            
             return {
                 "source": "coingecko",
                 "sentiment_score": sentiment_score,
                 "sentiment_votes_up": sentiment_votes_up,
                 "sentiment_votes_down": sentiment_votes_down,
                 "reddit_subscribers": reddit_subscribers,
+                "price": current_price,
+                "price_change_24h": price_change_24h,
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -202,11 +209,25 @@ class SentimentAggregator:
                 "strength": 0,
                 "avg_sentiment": 0,
                 "sources": [],
+                "weights": {"coingecko": 0, "news": 0, "social": 0, "technical": 0},
                 "reason": "No data available"
             }
         
         total_score = sum(s.get("sentiment_score", 0) for s in sources)
         avg_score = total_score / len(sources)
+        
+        # Calculate dynamic weights based on which sources contributed
+        weights = {"coingecko": 0, "news": 0, "social": 0, "technical": 0}
+        total_sources = len(sources)
+        for source in sources:
+            source_name = source.get("source", "")
+            if "coingecko" in source_name:
+                weights["coingecko"] = (1 / total_sources) * 100
+            elif "news" in source_name or "cryptopanic" in source_name:
+                weights["news"] = (1 / total_sources) * 100
+            elif "reddit" in source_name:
+                weights["social"] = (1 / total_sources) * 100
+        # Technical analysis would go here if we had it
         
         # Generate signal
         signal, strength = self._score_to_signal(avg_score, trending)
@@ -216,6 +237,7 @@ class SentimentAggregator:
             "strength": strength,
             "avg_sentiment": avg_score,
             "sources": sources,
+            "weights": weights,
             "is_trending": trending.get("is_trending", False) if trending else False,
             "timestamp": datetime.now().isoformat(),
             "reason": self._generate_reason(signal, avg_score, trending)

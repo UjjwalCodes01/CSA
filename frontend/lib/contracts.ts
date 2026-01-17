@@ -30,8 +30,15 @@ export const SENTINEL_CLAMP_ABI = [
   },
   {
     "inputs": [],
-    "name": "getRemainingLimit",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "name": "getStatus",
+    "outputs": [
+      { "internalType": "uint256", "name": "currentSpent", "type": "uint256" },
+      { "internalType": "uint256", "name": "remaining", "type": "uint256" },
+      { "internalType": "uint256", "name": "timeUntilReset", "type": "uint256" },
+      { "internalType": "bool", "name": "isPaused", "type": "bool" },
+      { "internalType": "uint256", "name": "txCount", "type": "uint256" },
+      { "internalType": "uint256", "name": "x402TxCount", "type": "uint256" }
+    ],
     "stateMutability": "view",
     "type": "function"
   },

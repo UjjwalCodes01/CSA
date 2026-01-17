@@ -43,11 +43,20 @@ SENTINEL_ABI = [
         "inputs": [],
         "name": "getStatus",
         "outputs": [
-            {"internalType": "uint256", "name": "dailyLimit", "type": "uint256"},
-            {"internalType": "uint256", "name": "dailySpent", "type": "uint256"},
-            {"internalType": "uint256", "name": "remainingToday", "type": "uint256"},
-            {"internalType": "uint256", "name": "totalTransactions", "type": "uint256"}
+            {"internalType": "uint256", "name": "currentSpent", "type": "uint256"},
+            {"internalType": "uint256", "name": "remaining", "type": "uint256"},
+            {"internalType": "uint256", "name": "timeUntilReset", "type": "uint256"},
+            {"internalType": "bool", "name": "isPaused", "type": "bool"},
+            {"internalType": "uint256", "name": "txCount", "type": "uint256"},
+            {"internalType": "uint256", "name": "x402TxCount", "type": "uint256"}
         ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "dailyLimit",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
         "stateMutability": "view",
         "type": "function"
     }
@@ -130,19 +139,21 @@ def get_sentinel_status() -> Dict[str, Any]:
             abi=SENTINEL_ABI
         )
         
-        daily_limit_wei, spent_wei, remaining_wei, tx_count = sentinel.functions.getStatus().call()
+        current_spent, remaining, time_until_reset, is_paused, tx_count, x402_count = sentinel.functions.getStatus().call()
         
+        # Get daily limit separately
+        daily_limit_wei = sentinel.functions.dailyLimit().call()
         daily_limit = w3.from_wei(daily_limit_wei, 'ether')
-        spent = w3.from_wei(spent_wei, 'ether')
-        remaining = w3.from_wei(remaining_wei, 'ether')
+        spent = w3.from_wei(current_spent, 'ether')
+        remaining_cro = w3.from_wei(remaining, 'ether')
         
         return {
             "daily_limit": float(daily_limit),
             "daily_spent": float(spent),
-            "remaining_today": float(remaining),
+            "remaining_today": float(remaining_cro),
             "total_transactions": int(tx_count),
             "percentage_used": (float(spent) / float(daily_limit) * 100) if daily_limit > 0 else 0,
-            "message": f"Daily limit: {daily_limit} CRO | Spent: {spent} CRO | Remaining: {remaining} CRO | Transactions: {tx_count}"
+            "message": f"Daily limit: {daily_limit} CRO | Spent: {spent} CRO | Remaining: {remaining_cro} CRO | Transactions: {tx_count}"
         }
         
     except Exception as e:
@@ -174,7 +185,8 @@ def can_afford_swap(amount_cro: float) -> Dict[str, Any]:
             "recommendation": "Cannot verify safety limits"
         }
     
-    remaining = status["remaining_today"]
+    # Use 'daily_limit' field (Sentinel daily limit is 1000 CRO, doesn't decrease with transactions)
+    remaining = status.get("daily_limit", 0)
     
     # Check actual wallet balance
     try:

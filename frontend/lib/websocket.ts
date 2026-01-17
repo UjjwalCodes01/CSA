@@ -39,11 +39,26 @@ export interface AgentThinking {
   timestamp: string;
 }
 
+export interface CouncilVotes {
+  votes: Array<{
+    agent: string;
+    vote: string;
+    confidence: number;
+    reasoning: string;
+  }>;
+  consensus: string;
+  confidence: number;
+  agreement: string;
+  timestamp: string;
+}
+
 type WebSocketMessage =
   | { type: 'agent_status'; data: AgentStatus }
   | { type: 'trade_event'; data: TradeEvent }
   | { type: 'sentiment_update'; data: SentimentUpdate }
   | { type: 'ai_thinking'; data: AgentThinking }
+  | { type: 'agent_decision'; data: any }
+  | { type: 'council_votes'; data: CouncilVotes }
   | { type: 'error'; message: string };
 
 export function useWebSocket() {
@@ -54,16 +69,17 @@ export function useWebSocket() {
   });
   const [recentTrades, setRecentTrades] = useState<TradeEvent[]>([]);
   const [sentiment, setSentiment] = useState<SentimentUpdate | null>(null);
+  const [councilVotes, setCouncilVotes] = useState<CouncilVotes | null>(null);
   const [thinkingLog, setThinkingLog] = useState<AgentThinking[]>([]);
   
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttempts = useRef(0);
   const hasShownConnectedToast = useRef(false);
   const maxReconnectAttempts = 5;
 
   const connect = useCallback(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/ws';
     
     try {
       const ws = new WebSocket(wsUrl);
@@ -101,6 +117,11 @@ export function useWebSocket() {
 
             case 'sentiment_update':
               setSentiment(message.data);
+              break;
+
+            case 'council_votes':
+              setCouncilVotes(message.data);
+              console.log('Council votes received:', message.data);
               break;
 
             case 'ai_thinking':
@@ -189,6 +210,7 @@ export function useWebSocket() {
     agentStatus,
     recentTrades,
     sentiment,
+    councilVotes,
     thinkingLog,
     sendMessage,
     reconnect: connect,

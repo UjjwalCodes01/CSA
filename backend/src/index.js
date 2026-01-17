@@ -97,27 +97,29 @@ app.get('/api/agent/status', async (req, res) => {
   try {
     const address = req.query.address || process.env.AGENT_ADDRESS;
     
-    if (!address) {
-      return res.json({
-        status: 'idle',
-        lastUpdate: new Date().toISOString(),
-        currentAction: 'Waiting for wallet connection',
-        confidence: 0
-      });
-    }
-
-    const sentinelStatus = await sentinelContract.getSentinelStatus(address);
-    
-    res.json({
+    // Always return current agentState
+    const response = {
       status: agentState.status,
+      isRunning: agentState.isRunning,
       lastUpdate: agentState.lastUpdate,
       currentAction: agentState.currentAction,
-      confidence: agentState.confidence,
-      sentinelStatus: {
-        remainingLimit: ethers.formatEther(sentinelStatus.remainingLimit),
-        emergencyStop: sentinelStatus.emergencyStop
+      confidence: agentState.confidence
+    };
+    
+    // Add Sentinel status if address available
+    if (address) {
+      try {
+        const sentinelStatus = await sentinelContract.getSentinelStatus(address);
+        response.sentinelStatus = {
+          remainingLimit: ethers.formatEther(sentinelStatus.remainingLimit),
+          emergencyStop: sentinelStatus.emergencyStop
+        };
+      } catch (err) {
+        console.error('Error fetching sentinel status:', err);
       }
-    });
+    }
+    
+    res.json(response);
   } catch (error) {
     console.error('Error fetching agent status:', error);
     res.status(500).json({ error: 'Failed to fetch agent status' });
@@ -218,9 +220,13 @@ app.get('/api/market/price/compare', async (req, res) => {
 // Get CDC specific price data
 app.get('/api/market/price/cdc', async (req, res) => {
   try {
+    // Return cached price from agent updates
     res.json({
-      message: 'CDC price data not available',
-      status: 'no_data'
+      symbol: 'CRO_USDT',
+      price: agentState.marketData.price || 0,
+      change_24h: agentState.marketData.change24h || 0,
+      timestamp: new Date().toISOString(),
+      source: 'Crypto.com Exchange'
     });
   } catch (error) {
     console.error('Error getting CDC price:', error);
@@ -231,9 +237,49 @@ app.get('/api/market/price/cdc', async (req, res) => {
 // Get explainable AI data (agent decision reasoning)
 app.get('/api/agent/explainable-ai', async (req, res) => {
   try {
+    const latestDecision = agentState.decisions[0] || {};
+    const sentiment = agentState.sentiment;
+    const marketData = agentState.marketData;
+    const councilVotes = agentState.councilVotes;
+    
+    // Generate detailed reasoning from council votes
+    let reasoning = [];
+    if (councilVotes && councilVotes.votes && councilVotes.votes.length > 0) {
+      reasoning.push(`Council Decision: ${councilVotes.consensus.toUpperCase()} (${councilVotes.agreement})`);
+      councilVotes.votes.forEach(vote => {
+        reasoning.push(`${vote.agent}: ${vote.vote.toUpperCase()} (${(vote.confidence * 100).toFixed(0)}%) - ${vote.reasoning.substring(0, 100)}`);
+      });
+    } else {
+      reasoning = [latestDecision.reason || 'Waiting for market data'];
+    }
+    
     res.json({
-      message: 'Explainable AI data not available',
-      status: 'no_data'
+      decision: latestDecision.decision || 'HOLD',
+      confidence: agentState.confidence || 0,
+      reasoning: reasoning,
+      price_indicators: {
+        current_price: marketData.price || 0,
+        change_24h: marketData.change24h || 0,
+        moving_avg: marketData.price || 0,
+        trend: marketData.change24h > 0 ? 'UP' : marketData.change24h < 0 ? 'DOWN' : 'NEUTRAL'
+      },
+      sentiment_weights: agentState.sentimentWeights || {
+        coingecko: 25,
+        news: 25,
+        social_media: 25,
+        technical: 25
+      },
+      sentiment_data: {
+        score: sentiment.score || 0.5,
+        signal: sentiment.signal || 'hold',
+        sources: sentiment.sources || []
+      },
+      risk_assessment: {
+        volatility: 'Medium',
+        volume: 'Medium',
+        sentiment: sentiment.signal || 'Neutral'
+      },
+      timestamp: latestDecision.timestamp || new Date().toISOString()
     });
   } catch (error) {
     console.error('Error getting explainable AI data:', error);
@@ -316,6 +362,41 @@ app.post('/api/agent/start', async (req, res) => {
 
     console.log('🚀 Starting AI agent...');
     
+    // Spawn Python agent process
+    const aiAgentPath = path.join(__dirname, '../../ai-agent/run_autonomous_trader.py');
+    const pythonProcess = spawn('python3', [aiAgentPath], {
+      cwd: path.join(__dirname, '../../ai-agent'),
+      env: { ...process.env }
+    });
+    
+    pythonProcess.stdout.on('data', (data) => {
+      console.log(`[AI Agent] ${data.toString().trim()}`);
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`[AI Agent Error] ${data.toString().trim()}`);
+    });
+    
+    pythonProcess.on('exit', (code) => {
+      console.log(`AI Agent process exited with code ${code}`);
+      agentState.isRunning = false;
+      agentState.status = 'stopped';
+      agentState.agentProcess = null;
+      broadcastToAll({
+        type: 'agent_status',
+        data: {
+          status: 'stopped',
+          lastUpdate: new Date().toISOString(),
+          currentAction: 'Agent stopped',
+          confidence: 0,
+          isRunning: false
+        }
+      });
+    });
+    
+    // Store process reference
+    agentState.agentProcess = pythonProcess;
+    
     // Update state
     agentState.isRunning = true;
     agentState.status = 'running';
@@ -364,6 +445,13 @@ app.post('/api/agent/stop', async (req, res) => {
     }
 
     console.log('🛑 Stopping AI agent...');
+    
+    // Kill Python process if it exists
+    if (agentState.agentProcess) {
+      agentState.agentProcess.kill('SIGTERM');
+      agentState.agentProcess = null;
+      console.log('✅ Python agent process terminated');
+    }
     
     // Update state
     agentState.isRunning = false;
@@ -502,9 +590,10 @@ app.post('/api/trades/approve', async (req, res) => {
 });
 
 // Manual trade execution (user-initiated)
+// Now supports REAL blockchain transactions executed from user's MetaMask wallet
 app.post('/api/trades/manual', async (req, res) => {
   try {
-    const { symbol, amount, side, leverage } = req.body;
+    const { symbol, amount, side, leverage, walletAddress, txHash, realTransaction } = req.body;
     
     // Validate inputs
     if (!symbol || !amount || !side) {
@@ -513,8 +602,15 @@ app.post('/api/trades/manual', async (req, res) => {
         error: 'Missing required fields: symbol, amount, side' 
       });
     }
+    
+    if (realTransaction && !walletAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Wallet address required for real transactions'
+      });
+    }
 
-    const tradeId = `manual_${Date.now()}`;
+    const tradeId = txHash || `manual_${Date.now()}`;
     
     // Create manual trade record
     const manualTrade = {
@@ -525,54 +621,62 @@ app.post('/api/trades/manual', async (req, res) => {
       side: side.toLowerCase(), // 'buy' or 'sell'
       leverage: leverage ? parseFloat(leverage) : 1,
       timestamp: new Date().toISOString(),
-      status: 'pending',
-      executedPrice: null,
-      executedAmount: null,
-      agent: 'user_manual'
+      status: realTransaction ? 'executed' : 'simulated',
+      executedPrice: realTransaction ? 'on-chain' : (Math.random() * 0.2 + 0.015).toFixed(6),
+      executedAmount: parseFloat(amount),
+      agent: `user_${walletAddress ? walletAddress.slice(0, 8) : 'unknown'}`,
+      walletAddress: walletAddress || 'unknown',
+      txHash: txHash || null,
+      realTransaction: realTransaction || false
     };
 
     // Add to trade history
     agentState.tradeHistory.push(manualTrade);
 
-    // Make x402 payment for trade execution (0.002 CRO)
-    try {
-      const x402Payment = await x402PaymentService.payForTradeExecution({
-        tradeId,
-        symbol,
-        amount,
-        side
-      });
-      
-      console.log(`✅ Manual trade payment successful: ${tradeId}`);
-      manualTrade.x402Payment = x402Payment;
-    } catch (x402Error) {
-      console.warn(`⚠️  x402 payment for manual trade failed: ${x402Error.message}`);
-      manualTrade.x402Payment = { success: false, error: x402Error.message };
+    // Only simulate for non-real transactions
+    if (!realTransaction) {
+      // Make x402 payment for trade execution (0.002 CRO)
+      try {
+        const x402Payment = await x402Service.payForTradeExecution({
+          tradeId,
+          symbol,
+          amount,
+          side
+        });
+        
+        console.log(`✅ Manual trade payment successful: ${tradeId}`);
+        manualTrade.x402Payment = x402Payment;
+      } catch (x402Error) {
+        console.warn(`⚠️  x402 payment for manual trade failed: ${x402Error.message}`);
+        manualTrade.x402Payment = { success: false, error: x402Error.message };
+      }
+
+      // Simulate execution
+      setTimeout(() => {
+        manualTrade.status = 'executed';
+        manualTrade.executedPrice = (Math.random() * 0.2 + 0.015).toFixed(6);
+        manualTrade.executedAmount = manualTrade.amount;
+
+        // Broadcast execution
+        broadcastToAll({
+          type: 'trade_executed',
+          data: manualTrade
+        });
+      }, 1000);
     }
 
-    // Simulate execution
-    setTimeout(() => {
-      manualTrade.status = 'executed';
-      manualTrade.executedPrice = (Math.random() * 0.2 + 0.015).toFixed(6);
-      manualTrade.executedAmount = manualTrade.amount;
-
-      // Broadcast execution
-      broadcastToAll({
-        type: 'trade_executed',
-        data: manualTrade
-      });
-    }, 1000);
-
-    // Broadcast creation
+    // Broadcast creation/execution
     broadcastToAll({
-      type: 'trade_created',
+      type: realTransaction ? 'trade_executed' : 'trade_created',
       data: manualTrade
     });
 
     res.json({
       success: true,
       trade: manualTrade,
-      message: `Manual ${side} trade created: ${symbol} x${amount}`
+      message: realTransaction 
+        ? `Real ${side} transaction recorded: ${symbol} x${amount}` 
+        : `Manual ${side} trade created: ${symbol} x${amount}`
     });
 
   } catch (error) {
@@ -588,6 +692,84 @@ app.post('/api/trades/manual', async (req, res) => {
 // ============================================================================
 // AI AGENT DATA INGESTION ENDPOINTS
 // ============================================================================
+
+// AI Agent Chat endpoint
+app.post('/api/agent/chat', async (req, res) => {
+  try {
+    const { message } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    
+    // Generate response based on current market state
+    let response = '';
+    const lowerMsg = message.toLowerCase();
+    
+    if (lowerMsg.includes('price') || lowerMsg.includes('cro')) {
+      const price = agentState.marketData.price || 0;
+      const change = agentState.marketData.change24h || 0;
+      response = `The current CRO price is $${price.toFixed(4)} with a 24h change of ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. `;
+      
+      if (change > 2) {
+        response += 'The price is showing strong upward momentum! \ud83d\ude80';
+      } else if (change > 0) {
+        response += 'The price is slightly positive today. \ud83d\udcc8';
+      } else if (change < -2) {
+        response += 'The price is down significantly today. \ud83d\udcc9';
+      } else {
+        response += 'The price is relatively stable. \u27a1\ufe0f';
+      }
+    } else if (lowerMsg.includes('sentiment')) {
+      const sentiment = agentState.sentiment;
+      response = `Current market sentiment is ${sentiment.signal.toUpperCase()} with a score of ${(sentiment.score * 100).toFixed(0)}%. `;
+      response += `Based on ${sentiment.sources?.length || 0} data sources including news, social media, and market data.`;
+    } else if (lowerMsg.includes('buy') || lowerMsg.includes('sell') || lowerMsg.includes('trade')) {
+      const decision = agentState.decisions[0]?.decision || 'HOLD';
+      const consensus = agentState.councilVotes?.consensus || 'hold';
+      const confidence = agentState.councilVotes?.confidence || 0;
+      
+      response = `The multi-agent council currently recommends: **${consensus.toUpperCase()}** with ${(confidence * 100).toFixed(0)}% confidence. `;
+      response += `Latest decision: ${decision}. `;
+      
+      if (consensus === 'buy' || consensus === 'strong_buy') {
+        response += '🟢 The agents are bullish - consider buying if you agree with the analysis.';
+      } else if (consensus === 'sell' || consensus === 'strong_sell') {
+        response += '🔴 The agents are bearish - consider selling or waiting.';
+      } else {
+        response += '🟡 The agents recommend holding - wait for clearer signals.';
+      }
+    } else if (lowerMsg.includes('council') || lowerMsg.includes('agents')) {
+      const votes = agentState.councilVotes?.votes || [];
+      if (votes.length > 0) {
+        response = 'Multi-Agent Council Votes:\n\n';
+        votes.forEach(vote => {
+          response += `• **${vote.agent}**: ${vote.vote.toUpperCase()} (${(vote.confidence * 100).toFixed(0)}% confidence)\n`;
+          response += `  Reasoning: ${vote.reasoning.substring(0, 100)}...\n\n`;
+        });
+        response += `\nConsensus: **${agentState.councilVotes.consensus.toUpperCase()}** (${agentState.councilVotes.agreement})`;
+      } else {
+        response = 'No council votes available yet. The agents vote every 15 minutes when analyzing market conditions.';
+      }
+    } else if (lowerMsg.includes('limit') || lowerMsg.includes('sentinel')) {
+      response = 'The Sentinel system enforces daily trading limits to protect against excessive losses. Check the Sentinel Status panel on the dashboard for your current limits and remaining capacity.';
+    } else {
+      // Default response
+      response = `I'm your autonomous trading assistant! I can help you with:\n\n`;
+      response += `• Current CRO price and market data\n`;
+      response += `• Sentiment analysis from multiple sources\n`;
+      response += `• Multi-agent council recommendations\n`;
+      response += `• Trading advice and strategies\n`;
+      response += `• Sentinel limits and risk management\n\n`;
+      response += `Try asking: "What's the current price?" or "Should I buy now?"`;
+    }
+    
+    res.json({ response });
+  } catch (error) {
+    console.error('Chat endpoint error:', error);
+    res.status(500).json({ error: 'Failed to process chat message' });
+  }
+});
 
 // Receive agent decision from Python AI agent
 app.post('/api/agent/decision', async (req, res) => {
@@ -606,13 +788,19 @@ app.post('/api/agent/decision', async (req, res) => {
 // Receive sentiment update from Python AI agent
 app.post('/api/market/sentiment/update', async (req, res) => {
   try {
-    const { signal, score, sources, is_trending } = req.body;
+    const { signal, score, sources, weights, is_trending } = req.body;
+    
+    // Store weights in agent state
+    if (weights) {
+      agentState.sentimentWeights = weights;
+    }
     
     // Update agent state
     broadcastSentimentUpdate({
       signal,
       score: parseFloat(score),
       sources: sources || [],
+      weights: weights || {coingecko: 25, news: 25, social: 25, technical: 25},
       is_trending: is_trending || false,
       timestamp: new Date().toISOString()
     });
@@ -653,13 +841,134 @@ app.post('/api/market/price/update', async (req, res) => {
   }
 });
 
+// Receive council votes from multi-agent system
+app.post('/api/council/votes', async (req, res) => {
+  try {
+    const { votes, consensus, confidence, agreement } = req.body;
+    
+    agentState.councilVotes = {
+      votes: votes || [],
+      consensus,
+      confidence: parseFloat(confidence) || 0,
+      agreement,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Broadcast council votes to all connected WebSocket clients
+    broadcastToAll({
+      type: 'council_votes',
+      data: agentState.councilVotes
+    });
+    
+    res.json({ success: true, message: 'Council votes received' });
+  } catch (error) {
+    console.error('Error receiving council votes:', error);
+    res.status(500).json({ error: 'Failed to receive council votes' });
+  }
+});
+
+// Propose transaction for user approval (AI agent → user's wallet)
+// AI agent prepares a transaction, frontend prompts user to sign via MetaMask
+app.post('/api/agent/propose-transaction', async (req, res) => {
+  try {
+    const { 
+      type, // 'wrap' | 'unwrap' | 'swap'
+      amount, 
+      tokenIn, 
+      tokenOut, 
+      minOutput,
+      reason,
+      decision,
+      councilVotes,
+      userAddress 
+    } = req.body;
+    
+    if (!userAddress) {
+      return res.status(400).json({ error: 'User address required' });
+    }
+    
+    // Create transaction proposal
+    const proposal = {
+      id: `ai_proposal_${Date.now()}`,
+      type,
+      amount: parseFloat(amount),
+      tokenIn,
+      tokenOut,
+      minOutput,
+      reason,
+      decision,
+      councilVotes,
+      userAddress,
+      status: 'pending_approval',
+      timestamp: new Date().toISOString()
+    };
+    
+    // Store proposal
+    if (!agentState.transactionProposals) {
+      agentState.transactionProposals = [];
+    }
+    agentState.transactionProposals.push(proposal);
+    
+    // Broadcast to frontend for user approval
+    broadcastToAll({
+      type: 'transaction_proposal',
+      data: proposal
+    });
+    
+    console.log(`🤖 AI Agent proposed ${type} transaction:`, proposal);
+    
+    res.json({ 
+      success: true, 
+      proposal,
+      message: 'Transaction proposal sent to user for approval'
+    });
+  } catch (error) {
+    console.error('Error proposing transaction:', error);
+    res.status(500).json({ error: 'Failed to propose transaction' });
+  }
+});
+
+// User approves/rejects AI transaction proposal
+app.post('/api/agent/proposal-response', async (req, res) => {
+  try {
+    const { proposalId, approved, txHash } = req.body;
+    
+    if (!agentState.transactionProposals) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+    
+    const proposal = agentState.transactionProposals.find(p => p.id === proposalId);
+    if (!proposal) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+    
+    proposal.status = approved ? 'approved' : 'rejected';
+    proposal.txHash = txHash;
+    proposal.responseTime = new Date().toISOString();
+    
+    // Broadcast result
+    broadcastToAll({
+      type: 'proposal_response',
+      data: proposal
+    });
+    
+    console.log(`👤 User ${approved ? 'approved' : 'rejected'} AI proposal:`, proposalId);
+    
+    res.json({ success: true, proposal });
+  } catch (error) {
+    console.error('Error recording proposal response:', error);
+    res.status(500).json({ error: 'Failed to record response' });
+  }
+});
+
 // ============================================================================
 // AGENT STATE MANAGEMENT
 // ============================================================================
 
 let agentState = {
-  status: 'stopped', // stopped, running
-  isRunning: false,   // Agent only runs when manually started
+  status: 'stopped',
+  isRunning: false,
+  isTradingEnabled: false,
   lastUpdate: new Date().toISOString(),
   currentAction: 'Agent stopped - click Start to begin',
   confidence: 0,
@@ -675,13 +984,26 @@ let agentState = {
   },
   sentiment: {
     signal: 'hold',
-    score: 0,
+    score: 0.5,
     sources: []
+  },
+  sentimentWeights: {
+    coingecko: 25,
+    news: 25,
+    social: 25,
+    technical: 25
+  },
+  councilVotes: {
+    votes: [],
+    consensus: 'hold',
+    confidence: 0,
+    agreement: 'No votes yet',
+    timestamp: new Date().toISOString()
   },
   tradeHistory: [],
   pendingApprovals: [],
-  decisions: [], // Agent decision log
-  agentProcess: null // Store Python agent process
+  decisions: [],
+  agentProcess: null
 };
 
 // ============================================================================
@@ -832,7 +1154,7 @@ function startAIAgent() {
   
   console.log('🤖 Starting AI Agent...');
   
-  aiAgentProcess = spawn('python', [aiAgentPath], {
+  aiAgentProcess = spawn('python3', [aiAgentPath], {
     cwd: path.join(__dirname, '../../ai-agent')
   });
 
@@ -853,46 +1175,6 @@ function startAIAgent() {
 
 // Uncomment to auto-start AI agent with backend
 // startAIAgent();
-
-// ============================================================================
-// PERIODIC UPDATES (Agent always monitoring)
-// ============================================================================
-
-// Agent always monitors market - update every 30 seconds
-setInterval(() => {
-  // Randomly update sentiment (in production, this comes from AI agent)
-  const signals = ['strong_buy', 'buy', 'neutral', 'sell', 'strong_sell'];
-  const randomSignal = signals[Math.floor(Math.random() * signals.length)];
-  const sentimentScore = (Math.random() * 2 - 1).toFixed(2);
-  
-  broadcastSentimentUpdate({
-    signal: randomSignal,
-    score: parseFloat(sentimentScore),
-    sources: ['CoinGecko', 'Price Action'],
-    timestamp: new Date().toISOString()
-  });
-
-  // Update market price
-  const newPrice = (0.0994 + (Math.random() * 0.01 - 0.005)).toFixed(4);
-  const priceChange = (Math.random() * 10 - 5).toFixed(2);
-  agentState.marketData.price = parseFloat(newPrice);
-  agentState.marketData.change24h = parseFloat(priceChange);
-  
-  // Update agent status
-  if (agentState.isTradingEnabled) {
-    agentState.status = randomSignal === 'strong_buy' || randomSignal === 'strong_sell' ? 'analyzing' : 'monitoring';
-    agentState.currentAction = `Monitoring markets - ${randomSignal.replace('_', ' ').toUpperCase()}`;
-  } else {
-    agentState.status = 'monitoring';
-    agentState.currentAction = 'Trading halted - monitoring only';
-  }
-  
-  broadcastAgentStatus(
-    agentState.status,
-    agentState.currentAction,
-    Math.abs(parseFloat(sentimentScore))
-  );
-}, 30000);
 
 // ============================================================================
 // X402 PAYMENT ENDPOINTS
@@ -992,20 +1274,12 @@ server.listen(PORT, () => {
   console.log('   POST /api/trades/approve');
   console.log('');
   console.log('🤖 Agent Status:');
-  console.log('   Monitoring: Always Active');
-  console.log('   Trading: Enabled (use emergency stop to disable)');
+  console.log('   Status: STOPPED (OFF by default)');
+  console.log('   Trading: DISABLED');
   console.log('');
-  console.log('💡 To start AI agent manually:');
-  console.log('   cd ../ai-agent && python run_autonomous_trader.py');
+  console.log('💡 To start AI agent:');
+  console.log('   1. Use dashboard Start button, or 2. cd ../ai-agent && python run_autonomous_trader.py');
   console.log('');
-  
-  // Add initial decision log
-  addAgentDecision(
-    `CRO/USD price: $${agentState.marketData.price}, Change: ${agentState.marketData.change24h > 0 ? '+' : ''}${agentState.marketData.change24h}%`,
-    'Monitoring active, trading enabled',
-    'MONITORING',
-    'Agent initialized and monitoring markets in real-time. Ready to execute trades when favorable conditions are detected.'
-  );
 });
 
 // Graceful shutdown

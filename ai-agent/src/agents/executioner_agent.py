@@ -102,12 +102,15 @@ def execute_swap_autonomous(
     reason: str
 ) -> Dict[str, Any]:
     """
-    Execute a swap autonomously after Sentinel approval.
+    Execute a swap autonomously: Native CRO → WCRO (wrapping).
     This function DOES NOT ask for user confirmation - it executes immediately!
+    
+    For BUY trades: Wraps native CRO into WCRO token.
+    For SELL trades: Use different function (unwrap WCRO to CRO).
     
     Args:
         amount_cro: Amount of CRO to swap (in CRO, not Wei)
-        token_out: Output token symbol (e.g., 'USDC')
+        token_out: Output token symbol - must be 'WCRO' for wrapping
         min_output: Minimum acceptable output (slippage protection)
         reason: Trading reason for audit log
         
@@ -122,17 +125,24 @@ def execute_swap_autonomous(
                 "tx_hash": None
             }
         
+        # Only support CRO → WCRO wrapping for now
+        if token_out.upper() != 'WCRO':
+            return {
+                "status": "error",
+                "reason": f"Only WCRO wrapping supported. Got: {token_out}",
+                "tx_hash": None
+            }
+        
         # Convert to Wei
         amount_wei = w3.to_wei(amount_cro, 'ether')
-        min_output_wei = w3.to_wei(min_output, 'ether')
         
         # 1. CHECK SENTINEL APPROVAL (MANDATORY)
-        router_address = Web3.to_checksum_address(os.getenv("MOCK_ROUTER_ADDRESS"))
+        wcro_address = Web3.to_checksum_address(os.getenv("WCRO_ADDRESS"))
         try:
             # simulateCheck requires (dapp_address, amount)
             sentinel_check = sentinel.functions.simulateCheck(
-                router_address,  # dapp address (AMM router)
-                amount_wei       # amount to swap
+                wcro_address,    # WCRO contract is the "dapp"
+                amount_wei       # amount to wrap
             ).call()
             
             # Parse response: (bool approved, string reason, uint256 remainingLimit)
@@ -152,78 +162,59 @@ def execute_swap_autonomous(
                 "tx_hash": None
             }
         
-        # 2. CHECK WALLET BALANCE
-        wcro = w3.eth.contract(
-            address=Web3.to_checksum_address(os.getenv("WCRO_ADDRESS")),
-            abi=ERC20_ABI
-        )
-        balance = wcro.functions.balanceOf(account.address).call()
+        # 2. CHECK NATIVE CRO BALANCE
+        balance = w3.eth.get_balance(account.address)
         if balance < amount_wei:
             return {
                 "status": "failed",
-                "reason": f"Insufficient balance: {w3.from_wei(balance, 'ether')} CRO available",
+                "reason": f"Insufficient CRO balance: {w3.from_wei(balance, 'ether')} CRO available, need {amount_cro}",
                 "tx_hash": None
             }
         
-        # 3. APPROVE ROUTER (if needed)
-        allowance = wcro.functions.allowance(account.address, router.address).call()
-        if allowance < amount_wei:
-            print("📝 Approving router...")
-            approve_tx = wcro.functions.approve(
-                router.address,
-                2**256 - 1  # Max approval
-            ).build_transaction({
-                'from': account.address,
-                'gas': 100000,
-                'gasPrice': w3.eth.gas_price,
-                'nonce': w3.eth.get_transaction_count(account.address),
-            })
-            signed = account.sign_transaction(approve_tx)
-            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-            w3.eth.wait_for_transaction_receipt(tx_hash)
-            print("✅ Router approved")
+        # 3. WRAP CRO → WCRO (deposit function)
+        wcro = w3.eth.contract(
+            address=wcro_address,
+            abi=[
+                {
+                    "inputs": [],
+                    "name": "deposit",
+                    "outputs": [],
+                    "stateMutability": "payable",
+                    "type": "function"
+                }
+            ]
+        )
         
-        # 4. EXECUTE SWAP
-        token_addresses = {
-            'USDC': os.getenv("USDC_ADDRESS"),
-            'CRO': os.getenv("WCRO_ADDRESS"),
-        }
-        
-        path = [
-            Web3.to_checksum_address(os.getenv("WCRO_ADDRESS")),
-            Web3.to_checksum_address(token_addresses.get(token_out, os.getenv("USDC_ADDRESS")))
-        ]
-        
-        deadline = w3.eth.get_block('latest')['timestamp'] + 300  # 5 min deadline
-        
-        print(f"🔄 Executing swap: {amount_cro} CRO → {token_out}")
-        swap_tx = router.functions.swapExactTokensForTokens(
-            amount_wei,
-            min_output_wei,
-            path,
-            account.address,
-            deadline
-        ).build_transaction({
+        print(f"🔄 Wrapping {amount_cro} CRO → WCRO...")
+        wrap_tx = wcro.functions.deposit().build_transaction({
             'from': account.address,
-            'gas': 300000,
+            'value': amount_wei,
+            'gas': 100000,
             'gasPrice': w3.eth.gas_price,
             'nonce': w3.eth.get_transaction_count(account.address),
         })
         
-        signed_swap = account.sign_transaction(swap_tx)
-        swap_hash = w3.eth.send_raw_transaction(signed_swap.raw_transaction)
-        receipt = w3.eth.wait_for_transaction_receipt(swap_hash)
+        signed_wrap = account.sign_transaction(wrap_tx)
+        wrap_hash = w3.eth.send_raw_transaction(signed_wrap.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(wrap_hash)
         
-        return {
-            "status": "executed",
-            "reason": reason,
-            "amount_in": amount_cro,
-            "token_out": token_out,
-            "tx_hash": swap_hash.hex(),
-            "gas_used": receipt['gasUsed'],
-            "block": receipt['blockNumber'],
-            "message": f"✅ Swap executed: {amount_cro} CRO → {token_out}"
-        }
+        if receipt['status'] == 1:
+            return {
+                "status": "success",
+                "reason": reason,
+                "amount_in": amount_cro,
+                "token_out": "WCRO",
+                "tx_hash": wrap_hash.hex(),
+                "gas_used": receipt['gasUsed'],
+                "block": receipt['blockNumber'],
+                "message": f"✅ Wrapped {amount_cro} CRO → WCRO"
+            }
+        else:
+            return {
+                "status": "failed",
+                "reason": "Transaction reverted on blockchain",
+                "tx_hash": wrap_hash.hex()
+            }
         
     except Exception as e:
         return {

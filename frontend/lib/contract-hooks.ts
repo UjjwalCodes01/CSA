@@ -13,43 +13,45 @@ export const CONTRACTS = {
 
 // Sentinel Clamp Hooks
 export function useSentinelStatus() {
+  const { data: status } = useReadContract({
+    address: CONTRACTS.sentinelClamp,
+    abi: SENTINEL_CLAMP_ABI,
+    functionName: 'getStatus',
+  });
+
   const { data: dailyLimit } = useReadContract({
     address: CONTRACTS.sentinelClamp,
     abi: SENTINEL_CLAMP_ABI,
     functionName: 'dailyLimit',
   });
 
-  const { data: dailySpent } = useReadContract({
-    address: CONTRACTS.sentinelClamp,
-    abi: SENTINEL_CLAMP_ABI,
-    functionName: 'dailySpent',
-  });
+  if (!status || !dailyLimit) {
+    return {
+      dailyLimit: '0',
+      dailySpent: '0',
+      remainingLimit: '0',
+      totalTransactions: 0,
+      x402Transactions: 0,
+      canTrade: false,
+    };
+  }
 
-  const { data: remainingLimit } = useReadContract({
-    address: CONTRACTS.sentinelClamp,
-    abi: SENTINEL_CLAMP_ABI,
-    functionName: 'getRemainingLimit',
-  });
-
-  const { data: totalTransactions } = useReadContract({
-    address: CONTRACTS.sentinelClamp,
-    abi: SENTINEL_CLAMP_ABI,
-    functionName: 'totalTransactions',
-  });
-
-  const { data: x402Transactions } = useReadContract({
-    address: CONTRACTS.sentinelClamp,
-    abi: SENTINEL_CLAMP_ABI,
-    functionName: 'x402Transactions',
-  });
+  const [currentSpent, remaining, , , txCount, x402TxCount] = status as [
+    bigint,
+    bigint,
+    bigint,
+    boolean,
+    bigint,
+    bigint
+  ];
 
   return {
-    dailyLimit: dailyLimit ? formatEther(dailyLimit) : '0',
-    dailySpent: dailySpent ? formatEther(dailySpent) : '0',
-    remainingLimit: remainingLimit ? formatEther(remainingLimit) : '0',
-    totalTransactions: totalTransactions ? Number(totalTransactions) : 0,
-    x402Transactions: x402Transactions ? Number(x402Transactions) : 0,
-    canTrade: remainingLimit ? Number(remainingLimit) > 0 : false,
+    dailyLimit: formatEther(dailyLimit),
+    dailySpent: formatEther(currentSpent),
+    remainingLimit: formatEther(remaining),
+    totalTransactions: Number(txCount),
+    x402Transactions: Number(x402TxCount),
+    canTrade: Number(remaining) > 0,
   };
 }
 
@@ -189,4 +191,72 @@ export function useGetAmountsOut(amountIn: string, path: `0x${string}`[]) {
     functionName: 'getAmountsOut',
     args: [parseEther(amountIn), path],
   });
+}
+// WCRO Wrap/Unwrap Hooks
+export function useWrapCRO() {
+  const { writeContract, data: hash, isPending, error: writeError } = useWriteContract();
+
+  const wrap = (amount: string) => {
+    writeContract({
+      address: CONTRACTS.wcro,
+      abi: [
+        {
+          inputs: [],
+          name: 'deposit',
+          outputs: [],
+          stateMutability: 'payable',
+          type: 'function',
+        },
+      ],
+      functionName: 'deposit',
+      value: parseEther(amount),
+    });
+  };
+
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  return {
+    wrap,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error: writeError,
+  };
+}
+
+export function useUnwrapWCRO() {
+  const { writeContract, data: hash, isPending, error: writeError } = useWriteContract();
+
+  const unwrap = (amount: string) => {
+    writeContract({
+      address: CONTRACTS.wcro,
+      abi: [
+        {
+          inputs: [{ internalType: 'uint256', name: 'wad', type: 'uint256' }],
+          name: 'withdraw',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function',
+        },
+      ],
+      functionName: 'withdraw',
+      args: [parseEther(amount)],
+    });
+  };
+
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  return {
+    unwrap,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error: writeError,
+  };
 }

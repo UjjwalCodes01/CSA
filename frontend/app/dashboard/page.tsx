@@ -62,7 +62,8 @@ import {
   type AgentDecision,
 } from "@/lib/api";
 import { useWebSocket, useEmergencyStop } from "@/lib/websocket";
-import { useSentinelStatus, useWCROBalance, useTCROBalance } from "@/lib/contract-hooks";
+import { useSentinelStatus, useWCROBalance, useTCROBalance, useWrapCRO, useUnwrapWCRO, useApproveToken, useSwapTokens } from "@/lib/contract-hooks";
+import { CONTRACTS } from "@/lib/contract-hooks";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -226,8 +227,7 @@ export default function Dashboard() {
     agentStatus: wsAgentStatus, 
     recentTrades: wsTrades, 
     sentiment: wsSentiment,
-    agentVotes: wsAgentVotes,
-    agentDecisions: wsAgentDecisions
+    councilVotes: wsCouncilVotes
   } = useWebSocket();
   
   // Emergency stop hook
@@ -237,6 +237,12 @@ export default function Dashboard() {
   const sentinelData = useSentinelStatus();
   const wcroBalance = useWCROBalance(address);
   const tcroBalance = useTCROBalance(address);
+  
+  // Transaction hooks for manual trading
+  const wrapCRO = useWrapCRO();
+  const unwrapWCRO = useUnwrapWCRO();
+  const approveToken = useApproveToken();
+  const swapTokens = useSwapTokens();
   
   // Track if component is mounted to prevent hydration mismatch
   const [mounted, setMounted] = useState(false);
@@ -331,7 +337,7 @@ export default function Dashboard() {
       volume: string;
       sentiment: string;
     };
-    reasoning: string[];
+    reasoning: string | string[];
     timestamp: string;
   } | null>(null);
   const [tradeHistory, setTradeHistory] = useState<TradeDecision[]>([]);
@@ -344,6 +350,8 @@ export default function Dashboard() {
   const [manualTradeDirection, setManualTradeDirection] = useState<'buy' | 'sell'>('buy');
   const [manualTradeAmount, setManualTradeAmount] = useState('0.1');
   const [isExecutingTrade, setIsExecutingTrade] = useState(false);
+  const [txInitiated, setTxInitiated] = useState(false);
+  const tradeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Multi-agent votes state
   const [agentVotes, setAgentVotes] = useState<Array<{
@@ -371,20 +379,6 @@ export default function Dashboard() {
   const [isStartingAgent, setIsStartingAgent] = useState(false);
   const [isStoppingAgent, setIsStoppingAgent] = useState(false);
   
-  // Update agent votes from WebSocket
-  useEffect(() => {
-    if (wsAgentVotes && wsAgentVotes.length > 0) {
-      setAgentVotes(wsAgentVotes);
-    }
-  }, [wsAgentVotes]);
-  
-  // Update agent decisions from WebSocket in real-time
-  useEffect(() => {
-    if (wsAgentDecisions && wsAgentDecisions.length > 0) {
-      setAgentDecisions(wsAgentDecisions);
-    }
-  }, [wsAgentDecisions]);
-  
   // Calculate performance metrics
   const performanceMetrics = useMemo(() => {
     console.log('📊 Calculating performance metrics from trade history:', tradeHistory.length, 'trades');
@@ -411,8 +405,8 @@ export default function Dashboard() {
     let worstTrade = Infinity;
     
     tradeHistory.forEach((trade) => {
-      // Use profit_loss if available
-      let pnl = trade.profit_loss || 0;
+      // Use profit_loss if available (cast to any to avoid TS error with dynamic property)
+      let pnl = (trade as any).profit_loss || 0;
       
       console.log(`Trade: ${trade.action} ${trade.amount} @ ${trade.sentiment_score} sentiment, ${trade.confidence} conf → PnL: ${pnl}`);
       
@@ -552,6 +546,14 @@ export default function Dashboard() {
     }
   }, [wsTrades?.length]);
   
+  // Update council votes from WebSocket
+  useEffect(() => {
+    if (wsCouncilVotes && wsCouncilVotes.votes) {
+      console.log('🗳️  Updating council votes:', wsCouncilVotes);
+      setAgentVotes(wsCouncilVotes.votes);
+    }
+  }, [wsCouncilVotes]);
+
   // Update sentiment from WebSocket
   useEffect(() => {
     if (wsSentiment && wsSentiment.timestamp) {
@@ -894,52 +896,198 @@ export default function Dashboard() {
   const handleManualTrade = async () => {
     if (!API_BASE) return;
     
+    // Check if wallet is connected
+    if (!address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    
     // Validate inputs
     if (!manualTradeAmount || parseFloat(manualTradeAmount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
     }
 
+    const amount = parseFloat(manualTradeAmount);
+    const isBuy = manualTradeDirection.toLowerCase() === 'buy';
+    
     setIsExecutingTrade(true);
-    try {
-      const response = await fetch(`${API_BASE}/trades/manual`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: 'CRO',  // Trading CRO
-          side: manualTradeDirection.toLowerCase(), // 'buy' or 'sell'
-          amount: parseFloat(manualTradeAmount),
-          leverage: 1,
-          walletAddress: address
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
-        toast.success(`Trade executed: ${manualTradeDirection} ${manualTradeAmount} CRO`);
-        
-        // Clear inputs
-        setManualTradeAmount('');
-        setManualTradeDirection('buy');
-        
-        // Refresh trade history
-        loadData();
-        
-        // Refresh page after 2 seconds
-        setTimeout(() => {
-          console.log('🔄 Refreshing page to update balances and trade history...');
-          window.location.reload();
-        }, 2000);
-      } else {
-        toast.error(data.error || data.details || 'Trade failed');
-      }
-    } catch (error) {
-      console.error('Manual trade error:', error);
-      toast.error('Error executing trade');
+    setTxInitiated(false);
+    
+    // Clear any existing timeout
+    if (tradeTimeoutRef.current) {
+      clearTimeout(tradeTimeoutRef.current);
     }
-    setIsExecutingTrade(false);
+    
+    // Safety timeout: reset after 2 minutes if stuck
+    tradeTimeoutRef.current = setTimeout(() => {
+      if (isExecutingTrade) {
+        console.warn('Manual trade timeout - resetting state');
+        toast.error('Transaction timeout - please try again', { 
+          id: isBuy ? 'wrap-toast' : 'unwrap-toast' 
+        });
+        setIsExecutingTrade(false);
+      }
+    }, 120000); // 2 minutes
+    
+    try {
+      // Step 1: Check balances
+      const tcroBalanceNum = parseFloat(tcroBalance.balance);
+      const wcroBalanceNum = parseFloat(wcroBalance.balance);
+      
+      if (isBuy) {
+        // BUY = Wrap CRO to WCRO (spending TCRO to get WCRO)
+        if (tcroBalanceNum < amount) {
+          toast.error(`Insufficient TCRO balance. You have ${tcroBalanceNum.toFixed(4)} TCRO`);
+          setIsExecutingTrade(false);
+          return;
+        }
+        
+        toast.loading('Preparing transaction...', { id: 'wrap-toast' });
+        
+        try {
+          // Execute wrap transaction
+          wrapCRO.wrap(amount.toString());
+          setTxInitiated(true);
+          toast.loading('Waiting for MetaMask confirmation...', { id: 'wrap-toast' });
+        } catch (err: any) {
+          console.error('Wrap error:', err);
+          toast.error(err.message || 'Failed to prepare transaction', { id: 'wrap-toast' });
+          setIsExecutingTrade(false);
+          return;
+        }
+        
+      } else {
+        // SELL = Unwrap WCRO to CRO (spending WCRO to get TCRO)
+        if (wcroBalanceNum < amount) {
+          toast.error(`Insufficient WCRO balance. You have ${wcroBalanceNum.toFixed(4)} WCRO`);
+          setIsExecutingTrade(false);
+          return;
+        }
+        
+        toast.loading('Preparing transaction...', { id: 'unwrap-toast' });
+        
+        try {
+          // Execute unwrap transaction
+          unwrapWCRO.unwrap(amount.toString());
+          setTxInitiated(true);
+          toast.loading('Waiting for MetaMask confirmation...', { id: 'unwrap-toast' });
+        } catch (err: any) {
+          console.error('Unwrap error:', err);
+          toast.error(err.message || 'Failed to prepare transaction', { id: 'unwrap-toast' });
+          setIsExecutingTrade(false);
+          return;
+        }
+      }
+      
+      // Note: Transaction completion is handled by wagmi hooks
+      // The success will be detected by watching wrapCRO.isSuccess or unwrapWCRO.isSuccess
+      
+    } catch (error: any) {
+      console.error('Manual trade error:', error);
+      toast.error(error?.message || 'Transaction failed', { id: isBuy ? 'wrap-toast' : 'unwrap-toast' });
+      setIsExecutingTrade(false);
+    }
   };
+  
+  // Watch for wrap transaction completion/failure
+  useEffect(() => {
+    if (!isExecutingTrade) return;
+    
+    if (wrapCRO.isSuccess) {
+      // Clear timeout on success
+      if (tradeTimeoutRef.current) {
+        clearTimeout(tradeTimeoutRef.current);
+        tradeTimeoutRef.current = null;
+      }
+      
+      const amount = manualTradeAmount;
+      toast.success(`Successfully bought ${amount} WCRO!`, { id: 'wrap-toast' });
+      setManualTradeAmount('');
+      setManualTradeDirection('buy');
+      setIsExecutingTrade(false);
+      loadData(); // Refresh balances
+      
+      // Notify backend for tracking
+      if (API_BASE && address) {
+        fetch(`${API_BASE}/trades/manual`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: 'WCRO',
+            side: 'buy',
+            amount: parseFloat(amount),
+            walletAddress: address,
+            txHash: wrapCRO.hash,
+            realTransaction: true
+          }),
+        }).catch(console.error);
+      }
+    }
+    
+    // Handle transaction errors - only check if we have an actual error from wagmi
+    if (txInitiated && wrapCRO.error && manualTradeDirection === 'buy') {
+      // Clear timeout on error
+      if (tradeTimeoutRef.current) {
+        clearTimeout(tradeTimeoutRef.current);
+        tradeTimeoutRef.current = null;
+      }
+      
+      toast.error('Transaction cancelled or failed', { id: 'wrap-toast' });
+      setIsExecutingTrade(false);
+      setTxInitiated(false);
+    }
+  }, [wrapCRO.isSuccess, wrapCRO.isPending, wrapCRO.hash, isExecutingTrade, txInitiated, manualTradeAmount, address, manualTradeDirection]);
+  
+  // Watch for unwrap transaction completion/failure
+  useEffect(() => {
+    if (!isExecutingTrade) return;
+    
+    if (unwrapWCRO.isSuccess) {
+      // Clear timeout on success
+      if (tradeTimeoutRef.current) {
+        clearTimeout(tradeTimeoutRef.current);
+        tradeTimeoutRef.current = null;
+      }
+      
+      const amount = manualTradeAmount;
+      toast.success(`Successfully sold ${amount} WCRO!`, { id: 'unwrap-toast' });
+      setManualTradeAmount('');
+      setManualTradeDirection('buy');
+      setIsExecutingTrade(false);
+      loadData(); // Refresh balances
+      
+      // Notify backend for tracking
+      if (API_BASE && address) {
+        fetch(`${API_BASE}/trades/manual`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: 'WCRO',
+            side: 'sell',
+            amount: parseFloat(amount),
+            walletAddress: address,
+            txHash: unwrapWCRO.hash,
+            realTransaction: true
+          }),
+        }).catch(console.error);
+      }
+    }
+    
+    // Handle transaction errors - only check if we have an actual error from wagmi
+    if (txInitiated && unwrapWCRO.error && manualTradeDirection === 'sell') {
+      // Clear timeout on error
+      if (tradeTimeoutRef.current) {
+        clearTimeout(tradeTimeoutRef.current);
+        tradeTimeoutRef.current = null;
+      }
+      
+      toast.error('Transaction cancelled or failed', { id: 'unwrap-toast' });
+      setIsExecutingTrade(false);
+      setTxInitiated(false);
+    }
+  }, [unwrapWCRO.isSuccess, unwrapWCRO.isPending, unwrapWCRO.hash, isExecutingTrade, txInitiated, manualTradeAmount, address, manualTradeDirection]);
+  
   
   // Format time
   const formatTime = (date: string | Date) => {
@@ -2044,21 +2192,21 @@ export default function Dashboard() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">Current Price</div>
-                      <div className="text-lg font-bold text-cyan-400">${(explainableAI?.priceIndicators?.currentPrice || 0).toFixed(4)}</div>
+                      <div className="text-lg font-bold text-cyan-400">${((explainableAI as any)?.price_indicators?.current_price || 0).toFixed(4)}</div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">24h Change</div>
-                      <div className={`text-lg font-bold ${(explainableAI?.priceIndicators?.priceChange24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {(explainableAI?.priceIndicators?.priceChange24h || 0) >= 0 ? '+' : ''}{(explainableAI?.priceIndicators?.priceChange24h || 0).toFixed(2)}%
+                      <div className={`text-lg font-bold ${(explainableAI as any)?.price_indicators?.change_24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {(explainableAI as any)?.price_indicators?.change_24h >= 0 ? '+' : ''}{((explainableAI as any)?.price_indicators?.change_24h || 0).toFixed(2)}%
                       </div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">Moving Avg</div>
-                      <div className="text-lg font-bold text-blue-400">${(explainableAI?.priceIndicators?.movingAverage || 0).toFixed(4)}</div>
+                      <div className="text-lg font-bold text-blue-400">${((explainableAI as any)?.price_indicators?.moving_avg || 0).toFixed(4)}</div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700">
                       <div className="text-xs text-gray-500 mb-1">Trend</div>
-                      <div className="text-lg font-bold text-purple-400">{explainableAI?.priceIndicators?.trend || 'N/A'}</div>
+                      <div className="text-lg font-bold text-purple-400">{(explainableAI as any)?.price_indicators?.trend || 'N/A'}</div>
                     </div>
                   </div>
                 </div>
@@ -2073,37 +2221,37 @@ export default function Dashboard() {
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">CoinGecko Data</span>
-                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.coingecko || 0.25) * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{(((explainableAI as any)?.sentiment_weights?.coingecko || 25) / 100 * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.coingecko || 0.25) * 100}%` }} />
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full" style={{ width: `${(explainableAI as any)?.sentiment_weights?.coingecko || 25}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">News Sentiment</span>
-                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.news || 0.25) * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{(((explainableAI as any)?.sentiment_weights?.news || 25) / 100 * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.news || 0.25) * 100}%` }} />
+                        <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full" style={{ width: `${(explainableAI as any)?.sentiment_weights?.news || 25}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">Social Media</span>
-                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.social || 0.25) * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{(((explainableAI as any)?.sentiment_weights?.social_media || 25) / 100 * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.social || 0.25) * 100}%` }} />
+                        <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full" style={{ width: `${(explainableAI as any)?.sentiment_weights?.social_media || 25}%` }} />
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs text-gray-400">Technical Analysis</span>
-                        <span className="text-xs font-semibold text-white">{((explainableAI?.sentimentWeights?.technical || 0.25) * 100).toFixed(0)}%</span>
+                        <span className="text-xs font-semibold text-white">{(((explainableAI as any)?.sentiment_weights?.technical || 25) / 100 * 100).toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-orange-500 to-red-500 h-2 rounded-full" style={{ width: `${(explainableAI?.sentimentWeights?.technical || 0.25) * 100}%` }} />
+                        <div className="bg-gradient-to-r from-orange-500 to-red-500 h-2 rounded-full" style={{ width: `${(explainableAI as any)?.sentiment_weights?.technical || 25}%` }} />
                       </div>
                     </div>
                   </div>
@@ -2119,31 +2267,31 @@ export default function Dashboard() {
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700 text-center">
                       <div className="text-xs text-gray-500 mb-1">Volatility</div>
                       <div className={`text-sm font-bold ${
-                        (explainableAI?.riskFactors?.volatility || 'Medium') === 'Low' ? 'text-green-400' :
-                        (explainableAI?.riskFactors?.volatility || 'Medium') === 'Medium' ? 'text-yellow-400' :
+                        ((explainableAI as any)?.risk_assessment?.volatility || 'Medium') === 'Low' ? 'text-green-400' :
+                        ((explainableAI as any)?.risk_assessment?.volatility || 'Medium') === 'Medium' ? 'text-yellow-400' :
                         'text-red-400'
                       }`}>
-                        {explainableAI?.riskFactors?.volatility || 'Medium'}
+                        {(explainableAI as any)?.risk_assessment?.volatility || 'Medium'}
                       </div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700 text-center">
                       <div className="text-xs text-gray-500 mb-1">Volume</div>
                       <div className={`text-sm font-bold ${
-                        (explainableAI?.riskFactors?.volume || 'Medium') === 'High' ? 'text-green-400' :
-                        (explainableAI?.riskFactors?.volume || 'Medium') === 'Medium' ? 'text-yellow-400' :
+                        ((explainableAI as any)?.risk_assessment?.volume || 'Medium') === 'High' ? 'text-green-400' :
+                        ((explainableAI as any)?.risk_assessment?.volume || 'Medium') === 'Medium' ? 'text-yellow-400' :
                         'text-red-400'
                       }`}>
-                        {explainableAI?.riskFactors?.volume || 'Medium'}
+                        {(explainableAI as any)?.risk_assessment?.volume || 'Medium'}
                       </div>
                     </div>
                     <div className="bg-black/30 rounded-lg p-3 border border-gray-700 text-center">
                       <div className="text-xs text-gray-500 mb-1">Sentiment</div>
                       <div className={`text-sm font-bold ${
-                        (explainableAI?.riskFactors?.sentiment || 'Neutral') === 'Positive' ? 'text-green-400' :
-                        (explainableAI?.riskFactors?.sentiment || 'Neutral') === 'Neutral' ? 'text-yellow-400' :
+                        ((explainableAI as any)?.risk_assessment?.sentiment || 'Neutral') === 'Positive' ? 'text-green-400' :
+                        ((explainableAI as any)?.risk_assessment?.sentiment || 'Neutral') === 'Neutral' ? 'text-yellow-400' :
                         'text-red-400'
                       }`}>
-                        {explainableAI?.riskFactors?.sentiment || 'Neutral'}
+                        {(explainableAI as any)?.risk_assessment?.sentiment || 'Neutral'}
                       </div>
                     </div>
                   </div>
@@ -2157,7 +2305,10 @@ export default function Dashboard() {
                   </h4>
                   <div className="bg-black/30 rounded-lg p-4 border border-gray-700">
                     <ul className="space-y-2">
-                      {(explainableAI?.reasoning || []).map((reason, idx) => (
+                      {(Array.isArray(explainableAI?.reasoning) 
+                        ? explainableAI.reasoning 
+                        : [explainableAI?.reasoning || 'No reasoning available']
+                      ).map((reason, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-sm text-gray-300">
                           <span className="text-purple-400 mt-1">•</span>
                           <span>{reason}</span>
