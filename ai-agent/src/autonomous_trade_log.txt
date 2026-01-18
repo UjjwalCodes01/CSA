@@ -364,61 +364,11 @@ Council Consensus: buy (confidence: 0.70)
   ⚡ Execution Specialist: strong_buy (0.80) - Execute immediately on the strong buy signal to maximize potential returns.
 
 ============================================================
-Time: 2026-01-18 00:13:59
+Time: 2026-01-17 21:14:20
 Signal: strong_buy (3)
-Sentiment: 0.631
-Trending: False
-Council Consensus: buy (confidence: 0.73)
-  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending or volume spike and only moderate sentiment sco
-  📊 Market Analyst: buy (0.70) - A strong buy signal and positive sentiment score suggest upward price movement, but the lack of volu
-  ⚡ Execution Specialist: strong_buy (0.90) - Strong buy signal with 3/4 confirmation demands immediate action to capitalize on the potential upsi
-
-============================================================
-Time: 2026-01-18 22:31:39
-Signal: strong_buy (3)
-Sentiment: 0.718
-Trending: False
-Council Consensus: buy (confidence: 0.73)
-  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of a volume spike and the absence of a trending market indi
-  📊 Market Analyst: buy (0.70) - The signal is strong_buy with a sentiment score of 0.718, but the lack of a volume spike and trendin
-  ⚡ Execution Specialist: strong_buy (0.90) - Strong buy signal with high sentiment score indicates immediate action to capitalize on the potentia
-
-============================================================
-Time: 2026-01-18 22:41:14
-Signal: strong_buy (3)
-Sentiment: 0.686
+Sentiment: 0.610
 Trending: False
 Council Consensus: buy (confidence: 0.70)
-  🛡️ Risk Manager: hold (0.60) - While the signal is strong buy, the lack of trending or volume spike and only moderate sentiment sco
-  📊 Market Analyst: buy (0.70) - The signal is strong buy with a sentiment score of 0.686 and 3/4 source strength, indicating a likel
-  ⚡ Execution Specialist: strong_buy (0.80) - Strong buy signal with good sentiment; capitalize on the momentum.
-
-============================================================
-Time: 2026-01-19 00:15:22
-Signal: strong_buy (3)
-Sentiment: 0.677
-Trending: False
-Council Consensus: buy (confidence: 0.70)
-  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending or volume spike and only moderate sentiment sco
-  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the trending is false and there is no 
-  ⚡ Execution Specialist: strong_buy (0.80) - Strong buy signal with positive sentiment indicates upward momentum, so we must capitalize immediate
-
-============================================================
-Time: 2026-01-19 00:30:50
-Signal: strong_buy (3)
-Sentiment: 0.677
-Trending: False
-Council Consensus: buy (confidence: 0.67)
-  🛡️ Risk Manager: hold (0.60) - The signal remains strong_buy, but the absence of a clear trend or volume spike, combined with a mod
-  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of a trend or volume spike te
-  ⚡ Execution Specialist: buy (0.70) - The signal remains strong, so we should continue buying to ride the wave.
-
-============================================================
-Time: 2026-01-19 00:46:17
-Signal: strong_buy (3)
-Sentiment: 0.698
-Trending: False
-Council Consensus: buy (confidence: 0.70)
-  🛡️ Risk Manager: hold (0.65) - Although the sentiment score has slightly improved, the lack of confirming factors like a trend or v
-  📊 Market Analyst: buy (0.70) - Although the signal is strong buy and sentiment is positive, the absence of a trend and volume spike
-  ⚡ Execution Specialist: buy (0.75) - Sentiment is improving, so we should buy to capitalize on the continued upward trend.
+  🛡️ Risk Manager: hold (0.60) - The absence of a trend and volume spike, along with a moderate sentiment score, tempers the strong_b
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
+  ⚡ Execution Specialist: strong_buy (0.80) - Act now on the strong buy signal to capture immediate profit opportunities.

@@ -51,9 +51,181 @@ class X402PaymentService {
         this.paymentHistory = []; // Payment log
         this.agentAddress = process.env.AGENT_WALLET_ADDRESS || (this.wallet ? this.wallet.address : 'dev-mode-agent');
         
-        console.log('✅ X402 Payment Service initialized');
+        // HTTP 402 Protocol Support
+        this.pendingPayments = new Map(); // Track pending payment nonces
+        this.paymentProofs = new Map(); // Track verified payment proofs
+        
+        console.log('✅ X402 Payment Service initialized (HTTP 402 Protocol)');
         console.log(`   Agent Address: ${this.agentAddress}`);
         console.log(`   Mode: ${this.devMode ? 'DEVELOPMENT (simulated payments)' : 'PRODUCTION (real x402 payments)'}`);
+    }
+
+    /**
+     * Generate HTTP 402 Payment Required response
+     * @param {string} serviceType - Type of service being requested
+     * @param {string} requestId - Unique request identifier
+     * @returns {object} 402 response with payment details
+     */
+    generate402Response(serviceType, requestId = null) {
+        const nonce = requestId || `x402_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const amount = PRICING[serviceType];
+        
+        if (!amount) {
+            throw new Error(`Unknown service type: ${serviceType}`);
+        }
+
+        const paymentRequest = {
+            status: 402,
+            message: 'Payment Required',
+            payment: {
+                nonce,
+                amount,
+                currency: 'CRO',
+                receiver: X402_RECEIVER_ADDRESS,
+                serviceType,
+                chainId: 338, // Cronos Testnet
+                expiresAt: Date.now() + (5 * 60 * 1000), // 5 minutes
+            },
+            instructions: 'Send payment transaction to the receiver address with nonce as data, then retry request with payment proof.'
+        };
+
+        // Store pending payment
+        this.pendingPayments.set(nonce, {
+            serviceType,
+            amount,
+            createdAt: Date.now(),
+            expiresAt: paymentRequest.payment.expiresAt
+        });
+
+        console.log(`🔒 Generated 402 Payment Required: ${serviceType} (${amount} CRO) - Nonce: ${nonce}`);
+        
+        return paymentRequest;
+    }
+
+    /**
+     * Verify payment proof from transaction hash
+     * @param {string} nonce - Payment nonce from 402 response
+     * @param {string} txHash - Transaction hash as payment proof
+     * @returns {boolean} True if payment is valid
+     */
+    async verifyPaymentProof(nonce, txHash) {
+        try {
+            // Check if nonce exists
+            const pendingPayment = this.pendingPayments.get(nonce);
+            if (!pendingPayment) {
+                console.log(`❌ Payment verification failed: Unknown nonce ${nonce}`);
+                return false;
+            }
+
+            // Check if expired
+            if (Date.now() > pendingPayment.expiresAt) {
+                console.log(`❌ Payment verification failed: Nonce expired ${nonce}`);
+                this.pendingPayments.delete(nonce);
+                return false;
+            }
+
+            // Check if already verified (prevent double-use)
+            if (this.paymentProofs.has(nonce)) {
+                console.log(`✅ Payment already verified (cached): ${nonce}`);
+                return true;
+            }
+
+            console.log(`🔍 Verifying payment proof: ${txHash} for nonce: ${nonce}`);
+
+            // Get transaction receipt
+            const receipt = await this.provider.getTransactionReceipt(txHash);
+            
+            if (!receipt) {
+                console.log(`❌ Payment verification failed: Transaction not found ${txHash}`);
+                return false;
+            }
+
+            if (receipt.status !== 1) {
+                console.log(`❌ Payment verification failed: Transaction failed ${txHash}`);
+                return false;
+            }
+
+            // Get transaction details
+            const tx = await this.provider.getTransaction(txHash);
+            
+            if (!tx) {
+                console.log(`❌ Payment verification failed: Transaction details not found ${txHash}`);
+                return false;
+            }
+
+            // Verify receiver address
+            if (tx.to.toLowerCase() !== X402_RECEIVER_ADDRESS.toLowerCase()) {
+                console.log(`❌ Payment verification failed: Wrong receiver ${tx.to}`);
+                return false;
+            }
+
+            // Verify payment amount
+            const expectedAmount = ethers.parseEther(pendingPayment.amount);
+            if (tx.value < expectedAmount) {
+                console.log(`❌ Payment verification failed: Insufficient amount ${ethers.formatEther(tx.value)} < ${pendingPayment.amount}`);
+                return false;
+            }
+
+            // Verify nonce in transaction data (optional but recommended)
+            if (tx.data && tx.data !== '0x') {
+                const dataStr = ethers.toUtf8String(tx.data);
+                if (dataStr !== pendingPayment.serviceType && !dataStr.includes(nonce)) {
+                    console.log(`⚠️  Warning: Transaction data mismatch (got: ${dataStr}, expected: ${pendingPayment.serviceType})`);
+                }
+            }
+
+            // Payment verified! Store proof
+            this.paymentProofs.set(nonce, {
+                txHash,
+                serviceType: pendingPayment.serviceType,
+                amount: pendingPayment.amount,
+                verifiedAt: Date.now(),
+                blockNumber: receipt.blockNumber,
+            });
+
+            // Add to payment history
+            this.paymentHistory.push({
+                id: nonce,
+                serviceType: pendingPayment.serviceType,
+                cost: pendingPayment.amount,
+                transactionHash: txHash,
+                blockNumber: receipt.blockNumber,
+                timestamp: new Date().toISOString(),
+                status: 'verified',
+                simulated: false,
+            });
+
+            // Clean up pending payment
+            this.pendingPayments.delete(nonce);
+
+            console.log(`✅ Payment verified: ${txHash} for ${pendingPayment.serviceType}`);
+            
+            return true;
+
+        } catch (error) {
+            console.error(`❌ Payment verification error:`, error.message);
+            return false;
+        }
+    }
+
+    /**
+     * Check if payment is required for service (middleware helper)
+     * @param {string} serviceType - Type of service
+     * @param {object} req - Express request object
+     * @returns {object|null} 402 response if payment required, null if authorized
+     */
+    checkPaymentRequired(serviceType, req) {
+        // Check for payment proof in headers
+        const paymentProof = req.headers['x-payment-proof'];
+        const paymentNonce = req.headers['x-payment-nonce'];
+
+        if (!paymentProof || !paymentNonce) {
+            // No payment proof provided - return 402
+            return this.generate402Response(serviceType);
+        }
+
+        // Validate payment proof (will be async verified in middleware)
+        return null; // Will be handled by verifyPaymentProof
     }
 
     /**
