@@ -165,3 +165,23 @@ Signal: strong_buy (3)
 Sentiment: 0.638
 Trending: False
 Decision: Despite the "strong_buy" signal, I am unable to execute a swap due to the Sentinel daily limit being 0 CRO, with 0 CRO remaining. Therefore, I will hold the current position and continue monitoring the market.
+
+============================================================
+Time: 2026-01-18 00:14:00
+Signal: strong_buy (3)
+Sentiment: 0.631
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending or volume spike and a sentiment score that is n
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score of 0.631, indicating a likely upward trend 
+  ⚡ Execution Specialist: strong_buy (0.90) - Strong buy signal with 3/4 confirmation sources indicates a high probability of upward momentum, dem
+
+============================================================
+Time: 2026-01-18 22:31:36
+Signal: strong_buy (3)
+Sentiment: 0.684
+Trending: False
+Council Consensus: buy (confidence: 0.67)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending and volume spike, combined with a moderate sent
+  📊 Market Analyst: buy (0.70) - A strong buy signal and positive sentiment suggest a bullish trend, but the lack of volume spike and
+  ⚡ Execution Specialist: buy (0.70) - Capitalizing on the strong buy signal and positive sentiment, I'll vote to buy, even though trending

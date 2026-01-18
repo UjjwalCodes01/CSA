@@ -291,9 +291,8 @@ app.get('/api/agent/explainable-ai', async (req, res) => {
 app.get('/api/blockchain/events', async (req, res) => {
   try {
     res.json({
-      events: [],
-      total: 0,
-      message: 'No blockchain events recorded yet'
+      events: agentState.blockchainEvents,
+      total: agentState.blockchainEvents.length
     });
   } catch (error) {
     console.error('Error getting blockchain events:', error);
@@ -305,8 +304,7 @@ app.get('/api/blockchain/events', async (req, res) => {
 app.get('/api/blockchain/stats', async (req, res) => {
   try {
     res.json({
-      message: 'Blockchain statistics not available',
-      status: 'no_data'
+      stats: agentState.blockchainStats
     });
   } catch (error) {
     console.error('Error getting blockchain stats:', error);
@@ -664,6 +662,18 @@ app.post('/api/trades/manual', async (req, res) => {
 
     // Add to trade history
     agentState.tradeHistory.push(manualTrade);
+
+    // Record blockchain event for real transactions
+    if (realTransaction && txHash) {
+      recordBlockchainEvent({
+        type: 'ManualTradeExecuted',
+        agent: walletAddress,
+        amount: amount.toString(),
+        txHash: txHash,
+        reason: `Manual ${side} trade`,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Only simulate for non-real transactions
     if (!realTransaction) {
@@ -1035,6 +1045,15 @@ let agentState = {
   tradeHistory: [],
   pendingApprovals: [],
   decisions: [],
+  blockchainEvents: [],
+  blockchainStats: {
+    totalEvents: 0,
+    approved: 0,
+    blocked: 0,
+    x402Payments: 0,
+    totalVolume: '0',
+    monitoring: true
+  },
   agentProcess: null
 };
 
@@ -1140,6 +1159,40 @@ export function broadcastTradeEvent(trade) {
     type: 'trade_event',
     data: trade
   });
+}
+
+// Record blockchain event
+function recordBlockchainEvent(event) {
+  const blockchainEvent = {
+    ...event,
+    timestamp: event.timestamp || new Date().toISOString()
+  };
+  
+  agentState.blockchainEvents.unshift(blockchainEvent);
+  
+  // Keep only last 100 events
+  if (agentState.blockchainEvents.length > 100) {
+    agentState.blockchainEvents = agentState.blockchainEvents.slice(0, 100);
+  }
+  
+  // Update stats
+  agentState.blockchainStats.totalEvents = agentState.blockchainEvents.length;
+  
+  if (event.type === 'TransactionApproved' || event.type === 'ManualTradeExecuted') {
+    agentState.blockchainStats.approved++;
+  } else if (event.type === 'TransactionBlocked') {
+    agentState.blockchainStats.blocked++;
+  } else if (event.type === 'X402PaymentApproved') {
+    agentState.blockchainStats.x402Payments++;
+  }
+  
+  // Broadcast to all connected clients
+  broadcastToAll({
+    type: 'blockchain_event',
+    data: blockchainEvent
+  });
+  
+  return blockchainEvent;
 }
 
 export function broadcastSentimentUpdate(sentiment) {
