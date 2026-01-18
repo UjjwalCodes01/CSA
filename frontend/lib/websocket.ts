@@ -59,6 +59,7 @@ type WebSocketMessage =
   | { type: 'ai_thinking'; data: AgentThinking }
   | { type: 'agent_decision'; data: any }
   | { type: 'council_votes'; data: CouncilVotes }
+  | { type: 'blockchain_event'; data: any }
   | { type: 'error'; message: string };
 
 export function useWebSocket() {
@@ -71,6 +72,7 @@ export function useWebSocket() {
   const [sentiment, setSentiment] = useState<SentimentUpdate | null>(null);
   const [councilVotes, setCouncilVotes] = useState<CouncilVotes | null>(null);
   const [thinkingLog, setThinkingLog] = useState<AgentThinking[]>([]);
+  const [blockchainEvents, setBlockchainEvents] = useState<any[]>([]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -135,6 +137,11 @@ export function useWebSocket() {
               // Agent decision logs will be fetched via API
               // Just show a toast notification
               console.log('New agent decision:', message.data);
+              break;
+
+            case 'blockchain_event':
+              setBlockchainEvents((prev) => [message.data, ...prev.slice(0, 99)]);
+              console.log('Blockchain event:', message.data);
               break;
 
             case 'error':
@@ -212,6 +219,7 @@ export function useWebSocket() {
     sentiment,
     councilVotes,
     thinkingLog,
+    blockchainEvents,
     sendMessage,
     reconnect: connect,
   };
