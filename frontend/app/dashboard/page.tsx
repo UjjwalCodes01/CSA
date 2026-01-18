@@ -635,7 +635,28 @@ export default function Dashboard() {
       const explainRes = await fetch(`${API_BASE}/agent/explainable-ai`);
       if (explainRes.ok) {
         const explainData = await explainRes.json();
-        setExplainableAI(explainData);
+        // Ensure all numeric fields are properly extracted
+        const safeExplainData = {
+          ...explainData,
+          price_indicators: {
+            current_price: parseFloat(explainData?.price_indicators?.current_price) || 0,
+            change_24h: parseFloat(explainData?.price_indicators?.change_24h) || 0,
+            moving_avg: parseFloat(explainData?.price_indicators?.moving_avg) || 0,
+            trend: String(explainData?.price_indicators?.trend || 'NEUTRAL')
+          },
+          sentiment_weights: {
+            coingecko: parseFloat(explainData?.sentiment_weights?.coingecko) || 25,
+            news: parseFloat(explainData?.sentiment_weights?.news) || 25,
+            social_media: parseFloat(explainData?.sentiment_weights?.social_media) || 25,
+            technical: parseFloat(explainData?.sentiment_weights?.technical) || 25
+          },
+          risk_assessment: {
+            volatility: String(explainData?.risk_assessment?.volatility || 'Medium'),
+            volume: String(explainData?.risk_assessment?.volume || 'Medium'),
+            sentiment: String(explainData?.risk_assessment?.sentiment || 'Neutral')
+          }
+        };
+        setExplainableAI(safeExplainData);
       }
       
       // Fetch trade history (agent's trades - manual + autonomous)

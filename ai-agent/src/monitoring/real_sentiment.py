@@ -127,8 +127,26 @@ REASONING: [one sentence explanation]"""
 
         try:
             print(f"   Analyzing {len(headlines)} headlines with Gemini...")
-            response = self.gemini_model.generate_content(prompt)
-            response_text = response.text.strip()
+            # Add timeout handling for Gemini API
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Gemini API call timed out after 30 seconds")
+            
+            # Set timeout to 30 seconds (Windows doesn't support signal.SIGALRM, so we'll handle it differently)
+            # For Windows compatibility, we'll just call it directly and catch any errors
+            try:
+                response = self.gemini_model.generate_content(prompt, request_options={"timeout": 30})
+                response_text = response.text.strip()
+            except Exception as api_error:
+                # If timeout or API error, return neutral sentiment and continue
+                print(f"   ⚠️  Gemini API timeout/error (using neutral sentiment): {type(api_error).__name__}")
+                return {
+                    "sentiment_score": 0.0,
+                    "confidence": "low",
+                    "reasoning": "Skipped Gemini analysis due to API timeout - using neutral sentiment",
+                    "articles_analyzed": len(headlines)
+                }
             
             # Parse response
             lines = response_text.split('\n')
@@ -186,17 +204,10 @@ REASONING: [one sentence explanation]"""
         all_articles.extend(google_articles)
         
         if not all_articles:
-            print("   ⚠️  No articles found, returning neutral sentiment")
-            return {
-                "source": "real_news",
-                "sentiment_score": 0,
-                "confidence": "low",
-                "reasoning": "No news articles available",
-                "articles_count": 0,
-                "timestamp": datetime.now().isoformat()
-            }
+            print("   ⚠️  No articles found")
+            raise Exception("No articles found for sentiment analysis")
         
-        # Analyze with Gemini
+        # Analyze with Gemini API (primary source only)
         analysis = self.analyze_headlines_with_gemini(all_articles)
         
         return {

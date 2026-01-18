@@ -372,3 +372,33 @@ Council Consensus: buy (confidence: 0.70)
   🛡️ Risk Manager: hold (0.60) - The absence of a trend and volume spike, along with a moderate sentiment score, tempers the strong_b
   📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
   ⚡ Execution Specialist: strong_buy (0.80) - Act now on the strong buy signal to capture immediate profit opportunities.
+
+============================================================
+Time: 2026-01-19 02:08:31
+Signal: strong_buy (3)
+Sentiment: 0.664
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.60) - Although the signal is strong_buy, the lack of trending and volume spike, combined with a moderate s
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
+  ⚡ Execution Specialist: strong_buy (0.90) - Strong buy signal with solid sentiment and strength indicates a high probability of immediate profit
+
+============================================================
+Time: 2026-01-19 02:19:48
+Signal: strong_buy (3)
+Sentiment: 0.698
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending or volume spike and only moderate sentiment sco
+  📊 Market Analyst: buy (0.70) - The strong buy signal and positive sentiment score suggest a bullish trend, but the lack of confirma
+  ⚡ Execution Specialist: strong_buy (0.90) - Strong buy signal indicates immediate action is needed to capitalize on the potential upside.
+
+============================================================
+Time: 2026-01-19 02:49:22
+Signal: strong_buy (3)
+Sentiment: 0.720
+Trending: False
+Council Consensus: buy (confidence: 0.70)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong buy and sentiment is positive, the lack of trending or volume spike indic
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of a volume spike and non-tre
+  ⚡ Execution Specialist: strong_buy (0.80) - Strong buy signal with high sentiment score indicates immediate action is needed to capitalize on th

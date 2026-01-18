@@ -3,11 +3,17 @@ Backend API Client - Connects AI Agent to Backend Server
 Sends real-time updates to the backend for dashboard display
 Handles HTTP 402 Payment Required protocol automatically
 """
+import sys
 import requests
 import json
 import os
 from datetime import datetime
 from web3 import Web3
+
+# Fix Unicode encoding for Windows
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 class BackendClient:
     def __init__(self, base_url=None, wallet_private_key=None):
@@ -24,11 +30,22 @@ class BackendClient:
             rpc_url = os.getenv("RPC_URL", "https://evm-t3.cronos.org")
             self.w3 = Web3(Web3.HTTPProvider(rpc_url))
             self.account = self.w3.eth.account.from_key(self.wallet_private_key)
-            print(f"✅ X402 payments enabled for agent: {self.account.address}")
+            print("[OK] X402 payments enabled for agent: {}".format(self.account.address))
         else:
             self.w3 = None
             self.account = None
-            print("⚠️  X402 payments disabled (no private key)")
+            print("[WARN] X402 payments disabled (no private key)")
+    
+    def _safe_print(self, message):
+        """Safe print that handles Unicode on Windows"""
+        try:
+            print(message)
+        except UnicodeEncodeError:
+            # Replace common emojis with ASCII equivalents
+            safe_msg = message.replace('🔒', '[LOCK]').replace('💳', '[PAYMENT]').replace('📡', '[TX]')
+            safe_msg = safe_msg.replace('✅', '[OK]').replace('❌', '[ERROR]').replace('⚠️', '[WARN]')
+            safe_msg = safe_msg.replace('💰', '[PAY]').replace('🔄', '[RETRY]')
+            print(safe_msg)
     
     def _handle_402_response(self, response):
         """
@@ -40,7 +57,10 @@ class BackendClient:
             
         try:
             payment_data = response.json()
-            print(f"🔒 Payment required: {payment_data['payment']['serviceType']} ({payment_data['payment']['amount']} CRO)")
+            self._safe_print("[LOCK] Payment required: {} ({} CRO)".format(
+                payment_data['payment']['serviceType'], 
+                payment_data['payment']['amount']
+            ))
             
             if not self.w3 or not self.account:
                 print("❌ Cannot make payment: Web3 not initialized")
@@ -71,7 +91,9 @@ class BackendClient:
             
             # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.wallet_private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            # Get raw transaction bytes
+            raw_tx = signed_tx.raw_transaction
+            tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
             tx_hash_hex = self.w3.to_hex(tx_hash)
             
             print(f"📡 Payment sent: {tx_hash_hex}")

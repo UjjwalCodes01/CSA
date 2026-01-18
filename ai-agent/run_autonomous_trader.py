@@ -9,6 +9,11 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+# Fix Unicode encoding for Windows
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 def check_environment():
     """Check if all required files and dependencies exist"""
     issues = []

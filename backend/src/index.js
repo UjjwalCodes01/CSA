@@ -22,6 +22,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { getX402Service, PRICING as X402_PRICING } from './services/x402-payment-service.js';
+import { requireX402Payment, x402DevMode } from './middleware/x402-middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -190,8 +191,11 @@ app.get('/api/market/pool', async (req, res) => {
   }
 });
 
-// Get sentiment analysis
-app.get('/api/market/sentiment', async (req, res) => {
+// Get sentiment analysis - X402 Protected (0.0005 CRO)
+app.get('/api/market/sentiment', 
+  x402DevMode(),
+  requireX402Payment('SENTIMENT_ANALYSIS'),
+  async (req, res) => {
   try {
     res.json({
       signal: agentState.sentiment.signal,
@@ -245,9 +249,11 @@ app.get('/api/agent/explainable-ai', async (req, res) => {
     // Generate detailed reasoning from council votes
     let reasoning = [];
     if (councilVotes && councilVotes.votes && councilVotes.votes.length > 0) {
-      reasoning.push(`Council Decision: ${councilVotes.consensus.toUpperCase()} (${councilVotes.agreement})`);
+      reasoning.push(`Council Decision: ${councilVotes.consensus?.toUpperCase() || 'HOLD'} (${councilVotes.agreement || 'unknown'})`);
       councilVotes.votes.forEach(vote => {
-        reasoning.push(`${vote.agent}: ${vote.vote.toUpperCase()} (${(vote.confidence * 100).toFixed(0)}%) - ${vote.reasoning.substring(0, 100)}`);
+        if (vote && vote.agent && vote.vote && vote.confidence !== undefined && vote.reasoning) {
+          reasoning.push(`${vote.agent}: ${vote.vote.toUpperCase()} (${(vote.confidence * 100).toFixed(0)}%) - ${vote.reasoning.substring(0, 100)}`);
+        }
       });
     } else {
       reasoning = [latestDecision.reason || 'Waiting for market data'];
@@ -256,12 +262,12 @@ app.get('/api/agent/explainable-ai', async (req, res) => {
     res.json({
       decision: latestDecision.decision || 'HOLD',
       confidence: agentState.confidence || 0,
-      reasoning: reasoning,
+      reasoning: Array.isArray(reasoning) ? reasoning : [String(reasoning)],
       price_indicators: {
-        current_price: marketData.price || 0,
-        change_24h: marketData.change24h || 0,
-        moving_avg: marketData.price || 0,
-        trend: marketData.change24h > 0 ? 'UP' : marketData.change24h < 0 ? 'DOWN' : 'NEUTRAL'
+        current_price: parseFloat(marketData?.price) || 0,
+        change_24h: parseFloat(marketData?.change24h) || 0,
+        moving_avg: parseFloat(marketData?.price) || 0,
+        trend: (parseFloat(marketData?.change24h) || 0) > 0 ? 'UP' : (parseFloat(marketData?.change24h) || 0) < 0 ? 'DOWN' : 'NEUTRAL'
       },
       sentiment_weights: agentState.sentimentWeights || {
         coingecko: 25,
@@ -813,8 +819,11 @@ app.post('/api/agent/chat', async (req, res) => {
   }
 });
 
-// Receive agent decision from Python AI agent
-app.post('/api/agent/decision', async (req, res) => {
+// Receive agent decision from Python AI agent - X402 Protected (0.001 CRO)
+app.post('/api/agent/decision',
+  x402DevMode(),
+  requireX402Payment('AI_DECISION'),
+  async (req, res) => {
   try {
     const { market_data, sentinel_status, decision, reason, timestamp } = req.body;
     
@@ -883,8 +892,11 @@ app.post('/api/market/price/update', async (req, res) => {
   }
 });
 
-// Receive council votes from multi-agent system
-app.post('/api/council/votes', async (req, res) => {
+// Receive council votes from multi-agent system - X402 Protected (0.0015 CRO)
+app.post('/api/council/votes',
+  x402DevMode(),
+  requireX402Payment('MULTI_AGENT_VOTE'),
+  async (req, res) => {
   try {
     const { votes, consensus, confidence, agreement } = req.body;
     
@@ -1131,8 +1143,8 @@ function broadcastToAll(message) {
   });
 }
 
-// Export for AI agent integration
-export function broadcastAgentStatus(status, action = '', confidence = 0) {
+// Broadcast agent status to connected WebSocket clients
+function broadcastAgentStatus(status, action = '', confidence = 0) {
   agentState.status = status;
   agentState.currentAction = action;
   agentState.confidence = confidence;
@@ -1149,7 +1161,7 @@ export function broadcastAgentStatus(status, action = '', confidence = 0) {
   });
 }
 
-export function broadcastTradeEvent(trade) {
+function broadcastTradeEvent(trade) {
   agentState.tradeHistory.unshift(trade);
   if (agentState.tradeHistory.length > 50) {
     agentState.tradeHistory = agentState.tradeHistory.slice(0, 50);
@@ -1195,7 +1207,7 @@ function recordBlockchainEvent(event) {
   return blockchainEvent;
 }
 
-export function broadcastSentimentUpdate(sentiment) {
+function broadcastSentimentUpdate(sentiment) {
   agentState.sentiment = sentiment;
 
   broadcastToAll({
@@ -1204,7 +1216,7 @@ export function broadcastSentimentUpdate(sentiment) {
   });
 }
 
-export function addAgentDecision(marketData, sentinelStatus, decision, reason) {
+function addAgentDecision(marketData, sentinelStatus, decision, reason) {
   const newDecision = {
     timestamp: new Date().toISOString(),
     market_data: marketData,
@@ -1380,3 +1392,4 @@ process.on('SIGINT', () => {
     process.exit(0);
   });
 });
+
