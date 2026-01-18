@@ -1877,7 +1877,7 @@ export default function Dashboard() {
                       <td className="py-3">
                         {event.txHash ? (
                           <a
-                            href={`https://explorer.cronos.org/testnet3/tx/${event.txHash}`}
+                            href={`https://explorer.cronos.org/testnet/tx/${event.txHash}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-cyan-400 hover:text-cyan-300"
@@ -2465,7 +2465,7 @@ export default function Dashboard() {
             <div>Sentinel Alpha Dashboard - Cronos x402 Hackathon</div>
             <div className="flex gap-4">
               <a
-                href="https://explorer.cronos.org/testnet3"
+                href="https://explorer.cronos.org/testnet"
                 target="_blank"
                 className="hover:text-white"
               >

@@ -362,3 +362,33 @@ Council Consensus: buy (confidence: 0.70)
   🛡️ Risk Manager: hold (0.60) - The strong_buy signal is undermined by the lack of a trend or volume spike and a moderate sentiment 
   📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of trending and volume spike 
   ⚡ Execution Specialist: strong_buy (0.80) - Execute immediately on the strong buy signal to maximize potential returns.
+
+============================================================
+Time: 2026-01-18 00:13:59
+Signal: strong_buy (3)
+Sentiment: 0.631
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending or volume spike and only moderate sentiment sco
+  📊 Market Analyst: buy (0.70) - A strong buy signal and positive sentiment score suggest upward price movement, but the lack of volu
+  ⚡ Execution Specialist: strong_buy (0.90) - Strong buy signal with 3/4 confirmation demands immediate action to capitalize on the potential upsi
+
+============================================================
+Time: 2026-01-18 22:31:39
+Signal: strong_buy (3)
+Sentiment: 0.718
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of a volume spike and the absence of a trending market indi
+  📊 Market Analyst: buy (0.70) - The signal is strong_buy with a sentiment score of 0.718, but the lack of a volume spike and trendin
+  ⚡ Execution Specialist: strong_buy (0.90) - Strong buy signal with high sentiment score indicates immediate action to capitalize on the potentia
+
+============================================================
+Time: 2026-01-18 22:41:14
+Signal: strong_buy (3)
+Sentiment: 0.686
+Trending: False
+Council Consensus: buy (confidence: 0.70)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong buy, the lack of trending or volume spike and only moderate sentiment sco
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a sentiment score of 0.686 and 3/4 source strength, indicating a likel
+  ⚡ Execution Specialist: strong_buy (0.80) - Strong buy signal with good sentiment; capitalize on the momentum.

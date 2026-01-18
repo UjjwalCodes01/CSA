@@ -185,8 +185,8 @@ def can_afford_swap(amount_cro: float) -> Dict[str, Any]:
             "recommendation": "Cannot verify safety limits"
         }
     
-    # Use 'daily_limit' field (Sentinel daily limit is 1000 CRO, doesn't decrease with transactions)
-    remaining = status.get("daily_limit", 0)
+    # Use remaining_today to check what's available for trading
+    remaining = status.get("remaining_today", 0)
     
     # Check actual wallet balance
     try:
