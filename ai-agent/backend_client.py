@@ -9,6 +9,10 @@ import json
 import os
 from datetime import datetime
 from web3 import Web3
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Fix Unicode encoding for Windows
 if sys.platform == 'win32':

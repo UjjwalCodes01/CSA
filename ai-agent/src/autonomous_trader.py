@@ -250,66 +250,96 @@ class AutonomousTrader:
             
             if consensus in ['strong_buy', 'buy'] and confidence >= 0.65:
                 print(f"\n💰 Executing BUY trade (confidence: {confidence:.2f})...")
-                try:
-                    from agents.executioner_agent import execute_swap_autonomous
-                    
-                    # Execute small test trade (0.1 CRO)
-                    trade_amount = 0.1
-                    min_output = trade_amount * 0.95  # 5% slippage tolerance
-                    reason = f"Council BUY decision: {council_result['agreement']}"
-                    
-                    # Use .invoke() method for LangChain tools
-                    result = execute_swap_autonomous.invoke({
-                        "amount_cro": trade_amount,
-                        "token_out": "WCRO",
-                        "min_output": min_output,
-                        "reason": reason
-                    })
-                    
-                    if isinstance(result, dict) and result.get('status') == 'success':
-                        print(f"✅ Trade executed successfully!")
-                        print(f"   Amount: {trade_amount} CRO → WCRO")
-                        print(f"   TX: {result.get('tx_hash', 'N/A')}")
+                max_retries = 3
+                retry_count = 0
+                trade_success = False
+                
+                while retry_count < max_retries and not trade_success:
+                    try:
+                        from agents.executioner_agent import execute_swap_autonomous
                         
-                        # Notify backend about successful trade
-                        try:
-                            print(f"   📡 Notifying frontend...")
-                            trade_notification = {
-                                "id": f"ai_trade_{int(time.time())}",
-                                "type": "autonomous",
-                                "symbol": "WCRO",
-                                "amount": trade_amount,
-                                "side": "buy",
-                                "status": "executed",
-                                "txHash": result.get('tx_hash'),
-                                "executedPrice": "on-chain",
-                                "executedAmount": trade_amount,
-                                "agent": "ai_autonomous",
-                                "walletAddress": os.getenv("AGENT_ADDRESS", "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"),
-                                "realTransaction": True,
-                                "reason": reason,
-                                "timestamp": datetime.now().isoformat()
-                            }
+                        # Execute small test trade (0.1 CRO)
+                        trade_amount = 0.1
+                        min_output = trade_amount * 0.95  # 5% slippage tolerance
+                        reason = f"Council BUY decision: {council_result['agreement']}"
+                        
+                        # Use .invoke() method for LangChain tools
+                        result = execute_swap_autonomous.invoke({
+                            "amount_cro": trade_amount,
+                            "token_out": "WCRO",
+                            "min_output": min_output,
+                            "reason": reason
+                        })
+                        
+                        if isinstance(result, dict) and result.get('status') == 'success':
+                            print(f"✅ Trade executed successfully!")
+                            print(f"   Amount: {trade_amount} CRO → WCRO")
+                            print(f"   TX: {result.get('tx_hash', 'N/A')}")
+                            trade_success = True
                             
-                            trade_response = requests.post(
-                                "http://localhost:3001/api/trades/manual",
-                                json=trade_notification,
-                                timeout=5
-                            )
+                            # Notify backend about successful trade
+                            try:
+                                print(f"   📡 Notifying frontend...")
+                                trade_notification = {
+                                    "id": f"ai_trade_{int(time.time())}",
+                                    "type": "autonomous",
+                                    "symbol": "WCRO",
+                                    "amount": trade_amount,
+                                    "side": "buy",
+                                    "status": "executed",
+                                    "txHash": result.get('tx_hash'),
+                                    "executedPrice": "on-chain",
+                                    "executedAmount": trade_amount,
+                                    "agent": "ai_autonomous",
+                                    "walletAddress": os.getenv("AGENT_ADDRESS", "0xa22Db5E0d0df88424207B6fadE76ae7a6FAABE94"),
+                                    "realTransaction": True,
+                                    "reason": reason,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                                
+                                trade_response = requests.post(
+                                    "http://localhost:3001/api/trades/manual",
+                                    json=trade_notification,
+                                    timeout=5
+                                )
+                                
+                                if trade_response.status_code == 200:
+                                    print(f"   ✅ Trade broadcasted to frontend")
+                                else:
+                                    print(f"   ⚠️  Failed to broadcast trade: {trade_response.status_code}")
+                            except Exception as notify_err:
+                                print(f"   ⚠️  Trade notification failed: {notify_err}")
+                        else:
+                            error_msg = result.get('reason', str(result)) if isinstance(result, dict) else str(result)
                             
-                            if trade_response.status_code == 200:
-                                print(f"   ✅ Trade broadcasted to frontend")
-                            else:
-                                print(f"   ⚠️  Failed to broadcast trade: {trade_response.status_code}")
-                        except Exception as notify_err:
-                            print(f"   ⚠️  Trade notification failed: {notify_err}")
-                    else:
-                        error_msg = result.get('reason', str(result)) if isinstance(result, dict) else str(result)
-                        print(f"❌ Trade failed: {error_msg}")
-                except Exception as e:
-                    print(f"❌ Trade execution error: {e}")
-                    import traceback
-                    traceback.print_exc()
+                            # Check if it's a nonce error
+                            if 'nonce' in str(error_msg).lower() or 'invalid sequence' in str(error_msg).lower():
+                                retry_count += 1
+                                if retry_count < max_retries:
+                                    print(f"⚠️  Nonce error detected, retrying ({retry_count}/{max_retries})...")
+                                    time.sleep(2)  # Wait for pending transactions
+                                    continue
+                            
+                            print(f"❌ Trade failed: {error_msg}")
+                            break
+                    
+                    except Exception as e:
+                        error_str = str(e)
+                        # Check if it's a nonce error
+                        if 'nonce' in error_str.lower() or 'invalid sequence' in error_str.lower():
+                            retry_count += 1
+                            if retry_count < max_retries:
+                                print(f"⚠️  Nonce error detected, retrying ({retry_count}/{max_retries})...")
+                                time.sleep(2)  # Wait for pending transactions
+                                continue
+                        
+                        print(f"❌ Trade execution error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        break
+                
+                if not trade_success:
+                    print(f"❌ Trade failed after {retry_count} attempts")
             
             elif consensus in ['strong_sell', 'sell'] and confidence >= 0.65:
                 print(f"\n💰 Executing SELL trade (confidence: {confidence:.2f})...")

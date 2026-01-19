@@ -120,7 +120,7 @@ def swap_wcro_to_tusd(amount_wcro: float, max_slippage: float = 0.01) -> dict:
         
         if allowance < amount_in_wei:
             print(f"   Approving {amount_wcro} WCRO...")
-            nonce = w3.eth.get_transaction_count(account.address)
+            nonce = w3.eth.get_transaction_count(account.address, 'pending')  # Use 'pending'
             approve_tx = wcro.functions.approve(
                 Web3.to_checksum_address(WCRO_AMM_ADDRESS),
                 amount_in_wei
@@ -134,12 +134,18 @@ def swap_wcro_to_tusd(amount_wcro: float, max_slippage: float = 0.01) -> dict:
             
             signed_tx = account.sign_transaction(approve_tx)
             tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
-            print(f"   ✅ Approved")
+            approve_receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if approve_receipt['status'] != 1:
+                return {
+                    'success': False,
+                    'error': 'Approval transaction failed'
+                }
+            print(f"   ✅ Approved (nonce {nonce})")
         
-        # Execute swap
+        # Execute swap - get fresh nonce
         print(f"   Executing swap...")
-        nonce = w3.eth.get_transaction_count(account.address)
+        nonce = w3.eth.get_transaction_count(account.address, 'pending')  # Fresh nonce
         
         swap_tx = amm.functions.swap(
             Web3.to_checksum_address(WCRO_ADDRESS),
@@ -157,6 +163,14 @@ def swap_wcro_to_tusd(amount_wcro: float, max_slippage: float = 0.01) -> dict:
         signed_tx = account.sign_transaction(swap_tx)
         tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+        
+        if receipt['status'] != 1:
+            return {
+                'success': False,
+                'error': 'Swap transaction failed'
+            }
+        
+        print(f"   ✅ Swap completed (nonce {nonce})")
         
         return {
             'success': True,

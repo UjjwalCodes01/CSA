@@ -121,7 +121,7 @@ def swap_on_simple_amm(
         
         # Approve token
         print(f"   Approving {amount_in / 1e18:.2f} tokens...")
-        nonce = w3.eth.get_transaction_count(account.address)
+        nonce = w3.eth.get_transaction_count(account.address, 'pending')  # Use 'pending' to get latest nonce
         approve_tx = token_in_contract.functions.approve(
             SIMPLE_AMM_ADDRESS,
             amount_in
@@ -135,12 +135,19 @@ def swap_on_simple_amm(
         
         signed_approve = account.sign_transaction(approve_tx)
         approve_hash = w3.eth.send_raw_transaction(signed_approve.raw_transaction)
-        w3.eth.wait_for_transaction_receipt(approve_hash, timeout=120)
-        print(f"   ✅ Approved")
+        approve_receipt = w3.eth.wait_for_transaction_receipt(approve_hash, timeout=120)
         
-        # Execute swap
+        # Verify approval succeeded
+        if approve_receipt['status'] != 1:
+            return {
+                "success": False,
+                "error": "Approval transaction failed"
+            }
+        print(f"   ✅ Approved (nonce {nonce})")
+        
+        # Execute swap - get fresh nonce after approval confirmed
         print(f"   Executing swap...")
-        nonce = w3.eth.get_transaction_count(account.address)
+        nonce = w3.eth.get_transaction_count(account.address, 'pending')  # Fresh nonce after approval
         swap_tx = amm.functions.swap(
             token_in,
             amount_in,
@@ -157,6 +164,15 @@ def swap_on_simple_amm(
         signed_swap = account.sign_transaction(swap_tx)
         swap_hash = w3.eth.send_raw_transaction(signed_swap.raw_transaction)
         receipt = w3.eth.wait_for_transaction_receipt(swap_hash, timeout=120)
+        
+        # Verify swap succeeded
+        if receipt['status'] != 1:
+            return {
+                "success": False,
+                "error": "Swap transaction failed"
+            }
+        
+        print(f"   ✅ Swap completed (nonce {nonce})")
         
         return {
             "success": True,
