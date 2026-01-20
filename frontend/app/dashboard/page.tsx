@@ -661,7 +661,7 @@ export default function Dashboard() {
         const updated = [newTrade, ...prev];
         
         // Re-sort by timestamp to maintain order
-        updated.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        updated.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         
         return updated.slice(0, 50); // Keep last 50 trades
       });
@@ -826,7 +826,7 @@ export default function Dashboard() {
           });
           
           // Sort by timestamp (newest first) to ensure correct order
-          formattedTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          formattedTrades.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           
           console.log('📈 Formatted trades (sorted):', formattedTrades.slice(0, 3));
           setTradeHistory(formattedTrades);
@@ -2553,15 +2553,15 @@ export default function Dashboard() {
                   
                   <div className="grid grid-cols-3 gap-4 pt-3 border-t border-gray-700">
                     <div>
-                      <div className="text-gray-500 text-xs">Sentiment</div>
+                      <div className="text-gray-500 text-xs mb-1">Sentiment</div>
                       <div className="font-semibold">{((tradeHistory[0].sentiment_score || 0) * 100).toFixed(0)}%</div>
                     </div>
                     <div>
-                      <div className="text-gray-500 text-xs">Confidence</div>
+                      <div className="text-gray-500 text-xs mb-1">Confidence</div>
                       <div className="font-semibold">{((tradeHistory[0].confidence || 0) * 100).toFixed(0)}%</div>
                     </div>
                     <div>
-                      <div className="text-gray-500 text-xs">Gas Cost</div>
+                      <div className="text-gray-500 text-xs mb-1">Gas Cost</div>
                       <div className="font-semibold">${(tradeHistory[0].gas_cost_usd || 0).toFixed(3)}</div>
                     </div>
                   </div>
