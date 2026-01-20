@@ -18,7 +18,6 @@
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-flow-renderer": "^10.3.17",
     "react-hot-toast": "^2.6.0",
     "recharts": "^3.6.0",
     "simplex-noise": "^4.0.3",

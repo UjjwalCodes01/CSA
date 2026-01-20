@@ -93,7 +93,7 @@ export function X402PaymentDialog({
         </Alert>
 
         {error && (
-          <Alert variant="destructive" className="border-red-500/30">
+          <Alert className="border-red-500/30">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
@@ -102,10 +102,9 @@ export function X402PaymentDialog({
 
       <CardFooter className="flex gap-3">
         <Button
-          variant="outline"
           onClick={onCancel}
           disabled={isProcessing}
-          className="flex-1"
+          className="flex-1 border border-gray-400 bg-transparent text-gray-300 hover:bg-gray-100 hover:text-black"
         >
           Cancel
         </Button>

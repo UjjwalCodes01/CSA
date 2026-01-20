@@ -492,3 +492,13 @@ Council Consensus: buy (confidence: 0.70)
   🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of a volume spike and the absence of a trending market sugg
   📊 Market Analyst: buy (0.70) - A strong buy signal and positive sentiment suggest upward price movement, but the lack of a volume s
   ⚡ Execution Specialist: strong_buy (0.80) - Strong buy signal and positive sentiment indicate immediate action to capitalize on the potential up
+
+============================================================
+Time: 2026-01-20 10:21:26
+Signal: strong_buy (3)
+Sentiment: 0.758
+Trending: False
+Council Consensus: buy (confidence: 0.68)
+  🛡️ Risk Manager: hold (0.60) - While the signal is strong_buy, the lack of trending or volume spike and only moderate strength sugg
+  📊 Market Analyst: buy (0.70) - The signal is strong buy with a positive sentiment score, but the lack of a volume spike and trendin
+  ⚡ Execution Specialist: strong_buy (0.75) - Strong buy signal with good sentiment; capitalize on the opportunity now.

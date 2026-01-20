@@ -1284,7 +1284,7 @@ export default function Dashboard() {
               <Link href="/" className="flex items-center gap-2">
                 <Image src="/logo.png" alt="Logo" width={40} height={40} className="rounded-full" />
                 <span className="font-bold text-xl bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-                  Cronos Sentinel Agent
+                  CSA
                 </span>
               </Link>
               <span className="px-2 py-1 bg-cyan-500/20 text-cyan-400 text-xs rounded-full border border-cyan-500/30">
