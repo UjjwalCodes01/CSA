@@ -411,8 +411,8 @@ app.post('/api/agent/start', async (req, res) => {
 
     console.log('🚀 Starting AI agent...');
     
-    // Spawn Python agent process
-    const aiAgentPath = path.join(__dirname, '../../ai-agent/run_autonomous_trader.py');
+    // Spawn Python agent process (direct call to autonomous_trader.py to avoid interactive prompts)
+    const aiAgentPath = path.join(__dirname, '../../ai-agent/src/autonomous_trader.py');
     const pythonProcess = spawn('python3', [aiAgentPath], {
       cwd: path.join(__dirname, '../../ai-agent'),
       env: { ...process.env }
@@ -1321,7 +1321,7 @@ function addAgentDecision(marketData, sentinelStatus, decision, reason) {
 let aiAgentProcess = null;
 
 function startAIAgent() {
-  const aiAgentPath = path.join(__dirname, '../../ai-agent/run_autonomous_trader.py');
+  const aiAgentPath = path.join(__dirname, '../../ai-agent/src/autonomous_trader.py');
   
   console.log('🤖 Starting AI Agent...');
   

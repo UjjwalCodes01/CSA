@@ -345,3 +345,33 @@ Council Consensus: buy (confidence: 0.80)
   🛡️ Risk Manager: buy (0.70) - Despite the strong buy signal and high sentiment, I recommend a buy due to the lack of a confirming 
   📊 Market Analyst: buy (0.75) - Although there's a strong buy signal and high sentiment, the lack of complete confirmation and absen
   ⚡ Execution Specialist: strong_buy (0.95) - Despite the time elapsed, the strong buy signal and high sentiment still warrant immediate action to
+
+============================================================
+Time: 2026-01-20 19:39:37
+Signal: strong_buy (3)
+Sentiment: 0.797
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.60) - The strong_buy signal is tempered by the lack of a trend or volume spike, only 3/4 source strength, 
+  📊 Market Analyst: buy (0.70) - The strong buy signal and positive sentiment are encouraging, but the signal's strength not being un
+  ⚡ Execution Specialist: strong_buy (0.90) - The strong buy signal, though slightly weaker sentiment, still justifies immediate action to capture
+
+============================================================
+Time: 2026-01-20 19:55:29
+Signal: strong_buy (3)
+Sentiment: 0.831
+Trending: False
+Council Consensus: buy (confidence: 0.80)
+  🛡️ Risk Manager: buy (0.70) - While the strong buy signal and improved sentiment are positive, the absence of a trend or volume sp
+  📊 Market Analyst: buy (0.75) - Despite the strong buy signal and high sentiment, the lack of full confirmation and no volume spike 
+  ⚡ Execution Specialist: strong_buy (0.95) - The renewed strong buy signal and high sentiment confirm the need to act immediately and seize the o
+
+============================================================
+Time: 2026-01-20 20:11:04
+Signal: strong_buy (4)
+Sentiment: 0.743
+Trending: True
+Council Consensus: strong_buy (confidence: 0.90)
+  🛡️ Risk Manager: buy (0.80) - Although the sentiment score is slightly lower, the signal is strong, strength is 4/4, and it's tren
+  📊 Market Analyst: strong_buy (0.90) - With a unanimous strong buy signal, positive trend, and solid sentiment, a strong buy is warranted.
+  ⚡ Execution Specialist: strong_buy (1.00) - With a strong buy signal, full strength, and a trending market, we must act decisively to maximize p
