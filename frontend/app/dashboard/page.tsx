@@ -626,29 +626,47 @@ export default function Dashboard() {
   // Update trade history from WebSocket
   useEffect(() => {
     if (wsTrades && wsTrades.length > 0) {
-      const newTrades = wsTrades.map(trade => ({
-        id: trade.id || trade.txHash || '',
-        timestamp: trade.timestamp,
-        action: (trade.type || 'hold').toLowerCase() as 'buy' | 'sell' | 'hold',
-        amount: parseFloat(trade.amountIn || '0'),
-        price: parseFloat(trade.price || '0'),
-        sentiment_score: trade.sentiment || 0,
-        confidence: 0.85,
-        profit_loss: (trade as any).profit_loss || 0,
-        gas_cost_usd: 0.001,
-        tx_hash: trade.txHash,
-        reason: `${trade.type || 'TRADE'} ${trade.amountIn || '0'} ${trade.tokenIn || ''} → ${trade.tokenOut || ''}`,
-      }));
+      const latestWsTrade = wsTrades[0]; // Get the most recent WebSocket trade
+      if (!latestWsTrade) return;
       
-      // Prepend new trades instead of replacing entire history
+      const newTrade = {
+        id: latestWsTrade.id || latestWsTrade.txHash || `ws_trade_${Date.now()}_${Math.random()}`,
+        timestamp: latestWsTrade.timestamp,
+        action: (latestWsTrade.type || latestWsTrade.action || 'hold').toLowerCase() as 'buy' | 'sell' | 'hold',
+        amount: parseFloat(latestWsTrade.amountIn || latestWsTrade.amount || '0'),
+        price: parseFloat(latestWsTrade.price || '0.015'),
+        sentiment_score: latestWsTrade.sentiment || latestWsTrade.sentiment_score || 0.5,
+        confidence: latestWsTrade.confidence || 0.85,
+        profit_loss: latestWsTrade.profit_loss || 0,
+        gas_cost_usd: 0.001,
+        tx_hash: latestWsTrade.txHash || '',
+        reason: `${latestWsTrade.type || 'autonomous'} ${parseFloat(latestWsTrade.amountIn || latestWsTrade.amount || '0')} units`,
+        status: latestWsTrade.status || 'executed'
+      };
+      
+      // Only add if not already in history (check by timestamp + amount to avoid duplicates)
       setTradeHistory(prev => {
-        // Avoid duplicates by checking IDs
-        const existingIds = new Set(prev.map(t => t.id));
-        const uniqueNewTrades = newTrades.filter(t => !existingIds.has(t.id));
-        return [...uniqueNewTrades, ...prev].slice(0, 50); // Keep last 50 trades
+        const isDuplicate = prev.some(t => 
+          (t.id === newTrade.id && newTrade.id !== '') || 
+          (Math.abs(new Date(t.timestamp).getTime() - new Date(newTrade.timestamp).getTime()) < 2000 && 
+           Math.abs(t.amount - newTrade.amount) < 0.0001)
+        );
+        
+        if (isDuplicate) {
+          console.log('⏭️ Skipping duplicate trade:', newTrade.timestamp);
+          return prev;
+        }
+        
+        console.log('✅ Adding new WebSocket trade:', newTrade);
+        const updated = [newTrade, ...prev];
+        
+        // Re-sort by timestamp to maintain order
+        updated.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        
+        return updated.slice(0, 50); // Keep last 50 trades
       });
     }
-  }, [wsTrades?.length]);
+  }, [wsTrades]);
   
   // Update council votes from WebSocket
   useEffect(() => {
@@ -792,7 +810,7 @@ export default function Dashboard() {
             }
             
             return {
-              id: trade.id || trade.txHash || `trade_${Date.now()}`,
+              id: trade.id || trade.txHash || `trade_${Date.now()}_${Math.random()}`,
               timestamp: trade.timestamp || new Date().toISOString(),
               action: (trade.action || trade.type || 'hold').toLowerCase() as 'buy' | 'sell' | 'hold',
               amount: amount,
@@ -806,7 +824,11 @@ export default function Dashboard() {
               status: trade.status || 'executed'
             };
           });
-          console.log('📈 Formatted trades:', formattedTrades);
+          
+          // Sort by timestamp (newest first) to ensure correct order
+          formattedTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          
+          console.log('📈 Formatted trades (sorted):', formattedTrades.slice(0, 3));
           setTradeHistory(formattedTrades);
         }
       } else {
@@ -1755,11 +1777,11 @@ export default function Dashboard() {
               {/* Worst Trade */}
               <div className="bg-gray-900/60 backdrop-blur-sm rounded-xl p-4 border border-gray-700">
                 <div className="flex items-center gap-2 mb-2">
-                  <ArrowDown className="w-3 h-3 text-red-400" />
+                  <ArrowDown className={`w-3 h-3 ${performanceMetrics.worstTrade >= 0 ? 'text-yellow-400' : 'text-red-400'}`} />
                   <span className="text-xs text-gray-400">Worst Trade</span>
                 </div>
-                <div className="text-2xl font-bold text-red-400">
-                  {performanceMetrics.worstTrade.toFixed(3)}
+                <div className={`text-2xl font-bold ${performanceMetrics.worstTrade >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {performanceMetrics.worstTrade >= 0 ? '+' : ''}{performanceMetrics.worstTrade.toFixed(3)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">TCRO</div>
               </div>
