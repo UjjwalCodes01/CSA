@@ -297,8 +297,10 @@ class AutonomousTrader:
                                     "timestamp": datetime.now().isoformat()
                                 }
                                 
+                                # Use environment variable for backend URL
+                                backend_url = os.getenv("BACKEND_URL", "http://localhost:3001")
                                 trade_response = requests.post(
-                                    "http://localhost:3001/api/trades/manual",
+                                    f"{backend_url}/api/trades/manual",
                                     json=trade_notification,
                                     timeout=5
                                 )

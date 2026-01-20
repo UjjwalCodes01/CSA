@@ -13,12 +13,17 @@ export interface TradeEvent {
   id: string;
   timestamp: string;
   type: 'buy' | 'sell';
+  action?: 'buy' | 'sell' | 'hold';
   tokenIn: string;
   tokenOut: string;
   amountIn: string;
   amountOut: string;
+  amount?: string;
   price: string;
   sentiment: number;
+  sentiment_score?: number;
+  confidence?: number;
+  profit_loss?: number;
   txHash?: string;
   status: 'pending' | 'success' | 'failed';
 }

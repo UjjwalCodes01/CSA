@@ -7,13 +7,18 @@ cryptocom-agent-client
 # X402 Paytech Protocol Support
 crypto-com-facilitator-client>=1.0.3
 
+# Google Gemini AI (CRITICAL - Used for news sentiment analysis)
+google-generativeai>=0.8.0
+
 # Autonomous Trading Dependencies
 vaderSentiment>=3.3.2
 schedule>=1.2.0
-feedparser>=6.0.10
-feedparser>=6.0.10  # NEW: For RSS parsing (CryptoPanic + Google News)
+feedparser>=6.0.10  # For RSS parsing (CryptoPanic + Google News)
+
+# Blockchain & Web3
+web3>=6.0.0
+eth-account>=0.11.0
 
 # Additional dependencies
-python-dotenv
-web3
-requests
+python-dotenv>=1.0.0
+requests>=2.31.0

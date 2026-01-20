@@ -305,3 +305,43 @@ Council Consensus: buy (confidence: 0.48)
   🛡️ Risk Manager: buy (0.70) - The strong_buy signal and improved sentiment score warrant a buy, but the lack of confirming trend o
   📊 Market Analyst: buy (0.75) - The strong buy signal and high sentiment score are positive indicators, but the lack of full confirm
   ⚡ Execution Specialist: hold (0.00) - Error getting vote: [Errno 32] Broken pipe
+
+============================================================
+Time: 2026-01-20 16:47:11
+Signal: strong_buy (3)
+Sentiment: 0.797
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.60) - The strong_buy signal is weakened by the lack of a trend or volume spike, only 3/4 source strength, 
+  📊 Market Analyst: buy (0.70) - The strong buy signal and positive sentiment are encouraging, but the signal's strength not being un
+  ⚡ Execution Specialist: strong_buy (0.90) - The persistent strong buy signal and high sentiment necessitate immediate action to seize the availa
+
+============================================================
+Time: 2026-01-20 17:02:44
+Signal: strong_buy (3)
+Sentiment: 0.829
+Trending: False
+Council Consensus: buy (confidence: 0.80)
+  🛡️ Risk Manager: buy (0.70) - The strong_buy signal and improved sentiment score present a potential opportunity, but the absence 
+  📊 Market Analyst: buy (0.75) - Despite the strong buy signal and high sentiment, the lack of complete confirmation and no volume sp
+  ⚡ Execution Specialist: strong_buy (0.95) - With a strong buy signal and high sentiment, immediate action is crucial to capitalize on the favora
+
+============================================================
+Time: 2026-01-20 17:18:15
+Signal: strong_buy (3)
+Sentiment: 0.831
+Trending: False
+Council Consensus: buy (confidence: 0.80)
+  🛡️ Risk Manager: buy (0.70) - The strong buy signal and high sentiment score are encouraging, but the missing trend and volume spi
+  📊 Market Analyst: buy (0.75) - The strong buy signal and high sentiment score are positive, but the lack of full confirmation and a
+  ⚡ Execution Specialist: strong_buy (0.95) - The continued strong buy signal and high sentiment demand immediate action to maximize potential gai
+
+============================================================
+Time: 2026-01-20 19:23:21
+Signal: strong_buy (3)
+Sentiment: 0.830
+Trending: False
+Council Consensus: buy (confidence: 0.80)
+  🛡️ Risk Manager: buy (0.70) - Despite the strong buy signal and high sentiment, I recommend a buy due to the lack of a confirming 
+  📊 Market Analyst: buy (0.75) - Although there's a strong buy signal and high sentiment, the lack of complete confirmation and absen
+  ⚡ Execution Specialist: strong_buy (0.95) - Despite the time elapsed, the strong buy signal and high sentiment still warrant immediate action to
