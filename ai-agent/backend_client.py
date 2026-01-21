@@ -132,9 +132,9 @@ class BackendClient:
         for attempt in range(max_retries):
             try:
                 if method == 'POST':
-                    response = self.session.post(url, json=data, headers=headers, timeout=5)
+                    response = self.session.post(url, json=data, headers=headers, timeout=20)
                 elif method == 'GET':
-                    response = self.session.get(url, headers=headers, timeout=5)
+                    response = self.session.get(url, headers=headers, timeout=20)
                 else:
                     raise ValueError(f"Unsupported method: {method}")
                 
