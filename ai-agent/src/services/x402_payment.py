@@ -111,14 +111,14 @@ class X402Payment:
             cost = float(self.pricing.get(service_type, '0'))
             print(f"💳 X402 Payment: {service_type} ({cost} CRO)")
             
-            # Call backend x402 payment endpoint
+            # Call backend x402 payment endpoint (30s timeout for Render's slower network)
             response = requests.post(
                 f"{self.backend_url}/api/x402/pay",
                 json={
                     'serviceType': service_type,
                     'metadata': metadata
                 },
-                timeout=10
+                timeout=30
             )
             
             if response.ok:
