@@ -177,10 +177,16 @@ class BackendClient:
             
             if response and response.ok:
                 print(f"✅ Decision sent to backend: {decision}")
+                sys.stdout.flush()
             else:
-                print(f"⚠️  Failed to send decision")
+                status = response.status_code if response else "No response"
+                error_text = response.text if response else "Connection failed"
+                print(f"⚠️  Failed to send decision (status: {status})")
+                print(f"   Error: {error_text}")
+                sys.stdout.flush()
         except Exception as e:
             print(f"⚠️  Backend connection failed: {e}")
+            sys.stdout.flush()
     
     def send_council_votes(self, votes, consensus, confidence, agreement):
         """Send multi-agent council votes to backend (with automatic 402 payment handling)"""
@@ -196,10 +202,16 @@ class BackendClient:
             
             if response and response.ok:
                 print(f"✅ Council votes sent: {consensus}")
+                sys.stdout.flush()
             else:
-                print(f"⚠️  Failed to send council votes")
+                status = response.status_code if response else "No response"
+                error_text = response.text if response else "Connection failed"
+                print(f"⚠️  Failed to send council votes (status: {status})")
+                print(f"   Error: {error_text}")
+                sys.stdout.flush()
         except Exception as e:
             print(f"⚠️  Failed to send council votes: {e}")
+            sys.stdout.flush()
     
     def send_sentiment_update(self, signal, score, sources, weights=None, is_trending=False):
         """Send sentiment update to backend (with automatic 402 payment handling)"""
@@ -216,8 +228,10 @@ class BackendClient:
             
             if response and response.ok:
                 print(f"✅ Sentiment sent: {signal} ({score})")
+                sys.stdout.flush()
         except Exception as e:
             print(f"⚠️  Failed to send sentiment: {e}")
+            sys.stdout.flush()
     
     def send_agent_status(self, status, action, confidence=0):
         """Send agent status update (with automatic 402 payment handling)"""
