@@ -22,7 +22,11 @@ if sys.platform == 'win32':
 class BackendClient:
     def __init__(self, base_url=None, wallet_private_key=None):
         # Use environment variable for production deployment
-        self.base_url = base_url or os.getenv("BACKEND_URL", "http://localhost:3001/api")
+        backend_url = base_url or os.getenv("BACKEND_URL", "http://localhost:3001")
+        # Ensure /api is in the URL
+        if not backend_url.endswith('/api'):
+            backend_url = backend_url.rstrip('/') + '/api'
+        self.base_url = backend_url
         self.session = requests.Session()
         
         # X402 Payment Protocol Support

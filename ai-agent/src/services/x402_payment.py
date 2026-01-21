@@ -19,7 +19,11 @@ class X402Payment:
     """
     
     def __init__(self):
-        self.backend_url = BACKEND_URL
+        backend_url = BACKEND_URL
+        # Ensure backend URL doesn't have /api (we add it in requests)
+        if backend_url.endswith('/api'):
+            backend_url = backend_url[:-4]
+        self.backend_url = backend_url
         self.payment_history = []
         self.total_spent = 0.0
         
