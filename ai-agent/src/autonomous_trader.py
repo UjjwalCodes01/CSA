@@ -4,12 +4,22 @@ This agent makes trading decisions 24/7 without human intervention
 """
 import os
 import sys
+
+# ===== FORCE UNBUFFERED OUTPUT FOR RENDER LOGS =====
+# Ensures all print() statements appear immediately in Render deployment logs
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(line_buffering=True)
+# ====================================================
+
 import time
 import requests
 import schedule
 from typing import Dict
 from datetime import datetime
 from dotenv import load_dotenv
+from signal import signal as signal_handler, SIGALRM, alarm
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -27,6 +37,13 @@ from services.x402_payment import get_x402_client
 # Import backend client for real-time dashboard updates
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from backend_client import BackendClient
+
+# Timeout exception for council voting
+class CouncilTimeout(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise CouncilTimeout("Council voting timeout")
 
 load_dotenv()
 
@@ -149,26 +166,54 @@ class AutonomousTrader:
             
             if not x402.is_authorized(council_payment):
                 print(f"❌ X402 payment failed - council voting not authorized")
+                sys.stdout.flush()
                 return {"action": "hold", "reason": "Council voting payment failed"}
             
-            # Get votes from 3 AI agents
-            council_result = self.council.vote_on_trade(
-                market_data={
-                    'signal': signal['signal'],
-                    'sentiment_score': signal.get('avg_sentiment', 0),
-                    'strength': signal.get('strength', 0)
-                },
-                sentiment_signal=signal
-            )
+            # Get votes from 3 AI agents (with 60-second timeout)
+            print("\n⏳ Waiting for Multi-Agent Council votes (max 60s)...")
+            sys.stdout.flush()
+            
+            try:
+                # Set 60-second timeout alarm
+                signal_handler(SIGALRM, timeout_handler)
+                alarm(60)
+                
+                council_result = self.council.vote_on_trade(
+                    market_data={
+                        'signal': signal['signal'],
+                        'sentiment_score': signal.get('avg_sentiment', 0),
+                        'strength': signal.get('strength', 0)
+                    },
+                    sentiment_signal=signal
+                )
+                
+                # Cancel alarm if successful
+                alarm(0)
+                
+            except CouncilTimeout:
+                print("\n⚠️  Council voting timeout (60s) - using sentiment signal directly")
+                sys.stdout.flush()
+                # Fallback to sentiment-based decision
+                council_result = {
+                    'consensus': signal['signal'],
+                    'confidence': signal.get('strength', 0) / 4.0,
+                    'votes': [{
+                        'agent': 'Sentiment Fallback',
+                        'vote': signal['signal'],
+                        'confidence': signal.get('strength', 0) / 4.0
+                    }]
+                }
             
             print(f"\n🗳️  Council Decision: {council_result['consensus'].upper()}")
             print(f"💪 Confidence: {council_result['confidence']:.2f}")
             print(f"📊 Votes:")
+            sys.stdout.flush()
             for vote in council_result['votes']:
                 print(f"   {vote['agent']}: {vote['vote'].upper()} ({vote['confidence']:.2f})")
             
             response = f"Council consensus: {council_result['consensus'].upper()} (confidence: {council_result['confidence']:.2f})"
             print(f"\n🤖 Multi-Agent Decision:\n{response}")
+            sys.stdout.flush()
             
             # Log decision with council votes
             decision_log = {
@@ -186,6 +231,7 @@ class AutonomousTrader:
             
             # Send updates to backend for dashboard
             print("\n📡 Attempting to connect to backend...")
+            sys.stdout.flush()
             if self.backend.ping():
                 print("✅ Backend is online, sending updates...")
                 
@@ -193,6 +239,7 @@ class AutonomousTrader:
                 sources_list = signal.get('sources', [])
                 weights = signal.get('weights', {"coingecko": 25, "news": 25, "social": 25, "technical": 25})
                 print(f"   → Sending sentiment: {signal['signal']} (score: {signal.get('avg_sentiment', 0):.2f})")
+                sys.stdout.flush()
                 self.backend.send_sentiment_update(
                     signal=signal['signal'],
                     score=signal.get('avg_sentiment', 0),

@@ -672,3 +672,43 @@ Council Consensus: buy (confidence: 0.72)
   🛡️ Risk Manager: hold (0.70) - The consistent absence of positive trend signals and less than full agreement among sources still ju
   📊 Market Analyst: buy (0.70) - The strong buy signal and positive sentiment score of 0.795 are tempered by the incomplete signal st
   ⚡ Execution Specialist: buy (0.75) - The strong buy signal remains, so we should continue accumulating assets to maximize potential profi
+
+============================================================
+Time: 2026-01-20 21:45:20
+Signal: strong_buy (3)
+Sentiment: 0.830
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.70) - Despite a slight increase in sentiment, the lack of a confirmed trend and incomplete source agreemen
+  📊 Market Analyst: buy (0.70) - Despite the strong buy signal and improved sentiment score of 0.830, the signal strength of 3/4 and 
+  ⚡ Execution Specialist: buy (0.80) - The improved sentiment score reinforces the buy signal, making this a good opportunity to increase o
+
+============================================================
+Time: 2026-01-20 22:00:53
+Signal: strong_buy (3)
+Sentiment: 0.795
+Trending: False
+Council Consensus: buy (confidence: 0.72)
+  🛡️ Risk Manager: hold (0.70) - The persistent lack of a trend or volume spike, combined with less than unanimous source agreement, 
+  📊 Market Analyst: buy (0.70) - The continued strong buy signal and positive sentiment score of 0.795 are still offset by the incomp
+  ⚡ Execution Specialist: buy (0.75) - We should continue buying to capitalize on the ongoing strong buy signal, even without a confirmed t
+
+============================================================
+Time: 2026-01-20 22:19:22
+Signal: strong_buy (3)
+Sentiment: 0.831
+Trending: False
+Council Consensus: buy (confidence: 0.73)
+  🛡️ Risk Manager: hold (0.70) - The absence of a clear trend and less than full agreement among sources continues to justify a hold 
+  📊 Market Analyst: buy (0.70) - Although there's a strong buy signal and a high sentiment score of 0.831, the incomplete signal stre
+  ⚡ Execution Specialist: buy (0.80) - The consistently strong buy signal and high sentiment score present a compelling case to continue ac
+
+============================================================
+Time: 2026-01-20 22:35:23
+Signal: strong_buy (3)
+Sentiment: 0.797
+Trending: False
+Council Consensus: buy (confidence: 0.72)
+  🛡️ Risk Manager: hold (0.70) - The lack of a trend and less than unanimous agreement among sources still calls for a hold position 
+  📊 Market Analyst: buy (0.70) - Despite the strong buy signal and positive sentiment score of 0.797, the signal strength of 3/4 and 
+  ⚡ Execution Specialist: buy (0.75) - Despite the lack of a trend or volume spike, the persistent strong buy signal justifies further buyi
