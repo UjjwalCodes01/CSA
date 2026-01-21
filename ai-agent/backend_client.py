@@ -154,11 +154,18 @@ class BackendClient:
                         return None
                 
                 # Request successful
+                print(f"✅ Request successful: {method} {endpoint} (status: {response.status_code})")
+                sys.stdout.flush()
                 return response
                 
             except Exception as e:
-                print(f"⚠️  Request error (attempt {attempt + 1}): {e}")
+                print(f"⚠️  Request error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
+                print(f"   URL: {url}")
+                print(f"   Method: {method}")
+                sys.stdout.flush()
                 if attempt >= max_retries - 1:
+                    print(f"❌ All retry attempts exhausted for {endpoint}")
+                    sys.stdout.flush()
                     return None
         
         return None
