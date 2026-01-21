@@ -10,7 +10,11 @@
 
 **An AI-Driven Autonomous Trading System with HTTP 402 Micropayments on Cronos**
 
-[🎥 Live Demo](#-live-demo) • [📖 Documentation](#-how-it-works) • [🚀 Quick Start](#-quick-start) • [🏆 Features](#-key-features)
+[🎥 Live Demo](https://csa-self.vercel.app) • [📖 Documentation](#-how-it-works) • [🚀 Quick Start](#-quick-start) • [🏆 Features](#-key-features)
+
+**🔗 Deployed Application:**
+- **Frontend:** [https://csa-self.vercel.app](https://csa-self.vercel.app)
+- **Backend:** [https://csa-backend-t6dc.onrender.com](https://csa-backend-t6dc.onrender.com)
 
 </div>
 
@@ -249,7 +253,19 @@ Council votes ✅
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### 🌐 Try It Live!
+
+**No setup required!** Visit the deployed application:
+- **Dashboard:** [https://csa-self.vercel.app](https://csa-self.vercel.app)
+- **Backend API:** [https://csa-backend-t6dc.onrender.com/api](https://csa-backend-t6dc.onrender.com/api)
+
+Connect your MetaMask wallet to Cronos Testnet and start trading!
+
+---
+
+### 💻 Local Development
+
+#### Prerequisites
 ```bash
 Node.js 20+
 Python 3.12+
@@ -292,11 +308,17 @@ cp .env.example .env
 python run_autonomous_trader.py
 ```
 
-### 5. Access Dashboard
-```
-Frontend: http://localhost:3000
-Backend:  http://localhost:3001
-```
+---
+
+## 🌐 Deployed Application
+
+### Production URLs
+- **Frontend (Vercel):** [https://csa-self.vercel.app](https://csa-self.vercel.app)
+- **Backend (Render):** [https://csa-backend-t6dc.onrender.com](https://csa-backend-t6dc.onrender.com)
+
+### Local Development URLs
+- **Frontend:** http://localhost:3000
+- **Backend:** http://localhost:3001
 
 ---
 
@@ -306,10 +328,9 @@ Backend:  http://localhost:3001
 
 | Contract | Address | Purpose |
 |----------|---------|---------|
-| **SentinelClamp** | `0x...` | Daily spending limit enforcement |
+| **SentinelClamp** | `0x2db87A4BBE1F767FFCB0338dAeD600fc096759Ff` | Daily spending limit enforcement |
 | **WCRO** | `0x...` | Wrapped CRO token (ERC20) |
 | **SimpleAMM** | `0x...` | Constant product AMM for swaps |
-| **X402Protocol** | `0x...` | HTTP 402 payment verification |
 
 ### SentinelClamp Features
 ```solidity
@@ -367,6 +388,8 @@ Agent Status Update:   FREE
 ---
 
 ## 🎥 Live Demo
+
+**🌐 Try it now:** [https://csa-self.vercel.app](https://csa-self.vercel.app)
 
 ### Dashboard Features
 - 📊 **Real-Time Trading** - Watch AI agents make decisions live
@@ -453,13 +476,10 @@ CSA/
 │   ├── src/
 │   │   ├── SentinelClamp.sol    # Daily limit enforcement
 │   │   ├── WCRO.sol             # Wrapped CRO token
-│   │   ├── SimpleAMM.sol        # AMM pool
-│   │   └── X402Protocol.sol     # Payment verification
+│   │   └── SimpleAMM.sol        # AMM pool
 │   ├── script/          # Deployment scripts
 │   └── test/            # Contract tests
 │
-├── HACKATHON_QUICK_START.md    # Judge quick start guide
-├── PRODUCTION_CHECKLIST.md     # Deployment checklist
 └── README.md                    # This file
 ```
 

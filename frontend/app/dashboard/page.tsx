@@ -1073,9 +1073,7 @@ export default function Dashboard() {
       if (cacheData.success && cacheData.cached) {
         // Cache is valid - use quick trade path
         const ageMinutes = cacheData.age || 0;
-        toast.success(`Using cached analysis (${ageMinutes} min old)`, {
-          description: 'Trade will execute in 5-10 seconds'
-        });
+        toast.success(`Using cached analysis (${ageMinutes} min old) - Trade will execute in 5-10 seconds`);
         
         const response = await fetch(`${API_BASE}/agent/execute-trade`, {
           method: 'POST',
@@ -1093,9 +1091,7 @@ export default function Dashboard() {
         }
       } else {
         // No cache - run full analysis (slower)
-        toast.info('Running full analysis...', {
-          description: 'This may take 45-60 seconds'
-        });
+        toast.success('Running full analysis... This may take 45-60 seconds');
         
         const response = await fetch(`${API_BASE}/agent/start`, {
           method: 'POST',
