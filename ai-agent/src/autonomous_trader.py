@@ -126,9 +126,12 @@ class AutonomousTrader:
         
         print("✅ Autonomous Trader ready!\n")
     
-    def make_trading_decision(self) -> Dict:
+    def make_trading_decision(self, execute_trade=True) -> Dict:
         """
         Core decision-making function - called every 5-10 minutes
+        
+        Args:
+            execute_trade: If False, only analyzes market without executing trades
         
         Returns:
             Decision dictionary with action taken
@@ -136,10 +139,12 @@ class AutonomousTrader:
         print(f"\n{'='*60}")
         print(f"🤖 AUTONOMOUS TRADER - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}")
+        sys.stdout.flush()
         
         # 1. Check if trading is active
         if not self.is_active:
             print("⏸️  Trading paused (too many losses)")
+            sys.stdout.flush()
             return {"action": "paused", "reason": "Risk management"}
         
         # 2. Get latest multi-source sentiment
@@ -305,16 +310,25 @@ class AutonomousTrader:
                     confidence=council_result['confidence']
                 )
                 print("✅ All updates sent to backend successfully!")
+                sys.stdout.flush()
             else:
                 print("❌ Backend is offline - updates not sent")
                 print("   Make sure backend server is running on port 3001")
+                sys.stdout.flush()
             
-            # Execute trade based on council decision
+            # Execute trade based on council decision (only if execute_trade=True)
+            if not execute_trade:
+                print(f"\n⏭️  Skipping trade execution (analysis-only mode)")
+                print(f"   Council Decision: {council_result['consensus'].upper()} (confidence: {council_result['confidence']:.2f})")
+                sys.stdout.flush()
+                return decision_log
+            
             consensus = council_result['consensus'].lower()
             confidence = council_result['confidence']
             
             if consensus in ['strong_buy', 'buy'] and confidence >= 0.65:
                 print(f"\n💰 Executing BUY trade (confidence: {confidence:.2f})...")
+                sys.stdout.flush()
                 max_retries = 3
                 retry_count = 0
                 trade_success = False
@@ -494,6 +508,15 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         # Test mode: make one decision
         test_autonomous_decision()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--execute-trade-only":
+        # Quick trade mode: execute trade using cached analysis (for demos)
+        print("⚡ Quick Trade Mode: Using cached analysis")
+        trader = AutonomousTrader()
+        
+        # Make decision with execute_trade enabled
+        trader.make_trading_decision(execute_trade=True)
+        
+        print("✅ Quick trade execution complete!")
     else:
         # Production mode: run forever
         trader = AutonomousTrader()

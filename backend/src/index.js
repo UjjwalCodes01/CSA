@@ -399,6 +399,33 @@ app.get('/api/agent/decisions', async (req, res) => {
   }
 });
 
+// Get cached analysis (instant response for quick trading)
+app.get('/api/market/cached-analysis', (req, res) => {
+  try {
+    if (analysisCache.isValid()) {
+      res.json({
+        success: true,
+        cached: true,
+        age: analysisCache.getAge(),
+        data: {
+          sentiment: analysisCache.sentiment,
+          councilVotes: analysisCache.councilVotes,
+          marketData: analysisCache.marketData
+        }
+      });
+    } else {
+      res.json({
+        success: false,
+        cached: false,
+        message: 'Cache expired or empty. Run full analysis.'
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching cached analysis:', error);
+    res.status(500).json({ error: 'Failed to fetch cached analysis' });
+  }
+});
+
 // Start agent
 app.post('/api/agent/start', async (req, res) => {
   try {
@@ -480,6 +507,61 @@ app.post('/api/agent/start', async (req, res) => {
   } catch (error) {
     console.error('Error starting agent:', error);
     res.status(500).json({ error: 'Failed to start agent' });
+  }
+});
+
+// Execute trade using cached analysis (fast path for demos)
+app.post('/api/agent/execute-trade', async (req, res) => {
+  try {
+    const { useCached = true } = req.body;
+    
+    // Check if cache is valid
+    if (useCached && !analysisCache.isValid()) {
+      return res.json({
+        success: false,
+        message: 'Cache expired. Please run full analysis first.',
+        cacheAge: analysisCache.getAge()
+      });
+    }
+    
+    console.log(`🎯 Executing trade with ${useCached ? 'cached' : 'fresh'} analysis...`);
+    
+    // Spawn Python agent with execute-trade-only flag
+    const aiAgentPath = path.join(__dirname, '../../ai-agent/src/autonomous_trader.py');
+    const pythonProcess = spawn('python3', [aiAgentPath, '--execute-trade-only'], {
+      cwd: path.join(__dirname, '../../ai-agent'),
+      env: { 
+        ...process.env,
+        USE_CACHED_ANALYSIS: useCached ? 'true' : 'false'
+      }
+    });
+    
+    let output = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      const message = data.toString();
+      output += message;
+      console.log(`[Trade Executor] ${message.trim()}`);
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`[Trade Executor Error] ${data}`);
+    });
+    
+    pythonProcess.on('close', (code) => {
+      console.log(`Trade executor exited with code ${code}`);
+    });
+    
+    res.json({
+      success: true,
+      message: 'Trade execution started',
+      usedCache: useCached,
+      cacheAge: analysisCache.getAge()
+    });
+    
+  } catch (error) {
+    console.error('Error executing trade:', error);
+    res.status(500).json({ error: 'Failed to execute trade' });
   }
 });
 
@@ -920,15 +1002,24 @@ app.post('/api/market/sentiment/update', async (req, res) => {
       agentState.sentimentWeights = weights;
     }
     
-    // Update agent state
-    broadcastSentimentUpdate({
+    const sentimentData = {
       signal,
       score: parseFloat(score),
       sources: sources || [],
       weights: weights || {coingecko: 25, news: 25, social: 25, technical: 25},
       is_trending: is_trending || false,
       timestamp: new Date().toISOString()
-    });
+    };
+    
+    // Update agent state
+    broadcastSentimentUpdate(sentimentData);
+    
+    // Update cache with sentiment data
+    analysisCache.update(
+      sentimentData,
+      analysisCache.councilVotes,
+      agentState.marketData
+    );
     
     res.json({ success: true, message: 'Sentiment updated' });
   } catch (error) {
@@ -974,7 +1065,7 @@ app.post('/api/council/votes',
   try {
     const { votes, consensus, confidence, agreement } = req.body;
     
-    agentState.councilVotes = {
+    const councilData = {
       votes: votes || [],
       consensus,
       confidence: parseFloat(confidence) || 0,
@@ -982,11 +1073,20 @@ app.post('/api/council/votes',
       timestamp: new Date().toISOString()
     };
     
+    agentState.councilVotes = councilData;
+    
     // Broadcast council votes to all connected WebSocket clients
     broadcastToAll({
       type: 'council_votes',
-      data: agentState.councilVotes
+      data: councilData
     });
+    
+    // Update cache with council data
+    analysisCache.update(
+      analysisCache.sentiment,
+      councilData,
+      agentState.marketData
+    );
     
     res.json({ success: true, message: 'Council votes received' });
   } catch (error) {
@@ -1141,6 +1241,45 @@ let agentState = {
     monitoring: true
   },
   agentProcess: null
+};
+
+// ============================================================================
+// ANALYSIS CACHE - For instant trading decisions
+// ============================================================================
+
+let analysisCache = {
+  sentiment: null,
+  councilVotes: null,
+  marketData: null,
+  timestamp: null,
+  
+  isValid() {
+    if (!this.timestamp || !this.sentiment || !this.councilVotes) {
+      return false;
+    }
+    const ageMinutes = (Date.now() - this.timestamp) / (1000 * 60);
+    return ageMinutes < 15; // Valid for 15 minutes
+  },
+  
+  getAge() {
+    if (!this.timestamp) return null;
+    return Math.floor((Date.now() - this.timestamp) / (1000 * 60)); // Age in minutes
+  },
+  
+  update(sentiment, councilVotes, marketData) {
+    this.sentiment = sentiment;
+    this.councilVotes = councilVotes;
+    this.marketData = marketData;
+    this.timestamp = Date.now();
+    console.log(`✅ Analysis cache updated (valid for 15 min)`);
+  },
+  
+  clear() {
+    this.sentiment = null;
+    this.councilVotes = null;
+    this.marketData = null;
+    this.timestamp = null;
+  }
 };
 
 // ============================================================================

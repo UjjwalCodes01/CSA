@@ -952,6 +952,32 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [address]);
 
+  // Prefetch cached analysis on page load for instant trading
+  useEffect(() => {
+    const prefetchCache = async () => {
+      if (!API_BASE) return;
+      
+      try {
+        const response = await fetch(`${API_BASE}/market/cached-analysis`);
+        const data = await response.json();
+        
+        if (data.success && data.cached) {
+          console.log(`✅ Analysis cache ready (${data.age} min old)`);
+        } else {
+          console.log('⚠️  No cached analysis available - first trade will be slower');
+        }
+      } catch (error) {
+        console.error('Cache prefetch error:', error);
+      }
+    };
+    
+    prefetchCache();
+    
+    // Refresh cache check every 5 minutes
+    const interval = setInterval(prefetchCache, 300000);
+    return () => clearInterval(interval);
+  }, [API_BASE]);
+
   // Fetch CDC price and comparison data
   useEffect(() => {
     const fetchCDCData = async () => {
@@ -1034,23 +1060,56 @@ export default function Dashboard() {
     setIsStoppingAgent(false);
   };
 
-  // Start agent handler
+  // Start agent handler (with cache support for fast demos)
   const handleStartAgent = async () => {
     if (!API_BASE) return;
     setIsStartingAgent(true);
+    
     try {
-      const response = await fetch(`${API_BASE}/agent/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      // First, check if we have cached analysis
+      const cacheResponse = await fetch(`${API_BASE}/market/cached-analysis`);
+      const cacheData = await cacheResponse.json();
       
-      if (response.ok) {
-        toast.success('Agent Started');
-        setAgentStatus((prev) => ({ ...prev, is_running: true }));
-        localStorage.setItem('agentRunning', 'true');
-        loadData(); // Refresh data
+      if (cacheData.success && cacheData.cached) {
+        // Cache is valid - use quick trade path
+        const ageMinutes = cacheData.age || 0;
+        toast.success(`Using cached analysis (${ageMinutes} min old)`, {
+          description: 'Trade will execute in 5-10 seconds'
+        });
+        
+        const response = await fetch(`${API_BASE}/agent/execute-trade`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ useCached: true })
+        });
+        
+        if (response.ok) {
+          toast.success('Quick Trade Started');
+          setAgentStatus((prev) => ({ ...prev, is_running: true }));
+          localStorage.setItem('agentRunning', 'true');
+          loadData(); // Refresh data
+        } else {
+          toast.error('Failed to start trade');
+        }
       } else {
-        toast.error('Failed to start agent');
+        // No cache - run full analysis (slower)
+        toast.info('Running full analysis...', {
+          description: 'This may take 45-60 seconds'
+        });
+        
+        const response = await fetch(`${API_BASE}/agent/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (response.ok) {
+          toast.success('Agent Started');
+          setAgentStatus((prev) => ({ ...prev, is_running: true }));
+          localStorage.setItem('agentRunning', 'true');
+          loadData(); // Refresh data
+        } else {
+          toast.error('Failed to start agent');
+        }
       }
     } catch (error) {
       console.error('Start agent error:', error);
