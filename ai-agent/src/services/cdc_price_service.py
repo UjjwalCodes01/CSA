@@ -75,15 +75,20 @@ class CDCPriceService:
             data = ticker.get('data', {})
             
             last_price = float(data.get('lastPrice', 0))
-            change_24h = float(data.get('change', 0))
+            price_change_absolute = float(data.get('priceChange', 0))  # Absolute change in dollars
             volume_24h = float(data.get('volume', 0))
             high_24h = float(data.get('high', 0))
             low_24h = float(data.get('low', 0))
             
+            # Calculate percentage change from absolute change
+            # priceChange is the absolute $ change, so: (change / (current - change)) * 100
             if last_price > 0:
+                price_24h_ago = last_price - price_change_absolute
+                change_24h_pct = (price_change_absolute / price_24h_ago) * 100 if price_24h_ago != 0 else 0
+                
                 return {
                     'price': last_price,
-                    'change_24h': change_24h,
+                    'change_24h': change_24h_pct,
                     'volume_24h': volume_24h,
                     'high_24h': high_24h,
                     'low_24h': low_24h,

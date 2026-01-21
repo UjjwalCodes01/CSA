@@ -248,16 +248,34 @@ class AutonomousTrader:
                     is_trending=signal.get('is_trending', False)
                 )
                 
-                # Send price update from CoinGecko data
-                coingecko_data = next((s for s in signal.get('sources', []) if s.get('source') == 'coingecko'), None)
-                if coingecko_data and coingecko_data.get('price'):
-                    price = coingecko_data['price']
-                    price_change = coingecko_data.get('price_change_24h', 0)
-                    print(f"   → Sending price: ${price:.4f} ({price_change:+.2f}%)")
+                # Send price update from CDC Exchange (primary source)
+                try:
+                    from services.cdc_price_service import CDCPriceService
+                    cdc_service = CDCPriceService()
+                    price_data = cdc_service.get_cro_price()
+                    
+                    price = price_data['price']
+                    price_change = price_data['change_24h']
+                    print(f"   → Sending price: ${price:.6f} ({price_change:+.2f}%)")
+                    sys.stdout.flush()
                     self.backend.send_price_update(
                         price=price,
                         change_24h=price_change
                     )
+                except Exception as e:
+                    print(f"   ⚠️  CDC price fetch failed: {e}")
+                    sys.stdout.flush()
+                    # Fallback to CoinGecko if CDC fails
+                    coingecko_data = next((s for s in signal.get('sources', []) if s.get('source') == 'coingecko'), None)
+                    if coingecko_data and coingecko_data.get('price'):
+                        price = coingecko_data['price']
+                        price_change = coingecko_data.get('price_change_24h', 0)
+                        print(f"   → Sending price (fallback): ${price:.4f} ({price_change:+.2f}%)")
+                        sys.stdout.flush()
+                        self.backend.send_price_update(
+                            price=price,
+                            change_24h=price_change
+                        )
                 
                 # Send council votes
                 print(f"   → Sending council votes: {council_result['consensus'].upper()}")
