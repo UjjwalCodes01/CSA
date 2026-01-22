@@ -551,7 +551,7 @@ It's a glimpse into the future of decentralized finance.
 
 <div align="center">
 
-### 🏆 Built for the love of the game 🏆
+### 🏆 Built for the love of the game 
 
 [![GitHub](https://img.shields.io/badge/GitHub-UjjwalCodes01/CSA-181717?style=for-the-badge&logo=github)](https://github.com/UjjwalCodes01/CSA)
 [![Cronos](https://img.shields.io/badge/Deployed_on-Cronos_Testnet-7B3FE4?style=for-the-badge)](https://cronos.org/)
