@@ -142,7 +142,7 @@ Aggregates data from 4 independent sources:
 
 ### Visual Architecture Diagram
 
-![CSA Architecture](https://i.imgur.com/your-uploaded-image.png)
+![CSA Architecture](docs/images/architecture.png)
 
 > **Note:** The architecture diagram shows the complete system flow including External Data Sources, AI Agent Council, Backend Orchestration, Cronos Blockchain, and Frontend Monitoring.
 
@@ -344,8 +344,8 @@ python run_autonomous_trader.py
 | Contract | Address | Purpose |
 |----------|---------|---------|
 | **SentinelClamp** | `0x2db87A4BBE1F767FFCB0338dAeD600fc096759Ff` | Daily spending limit enforcement |
-| **WCRO** | `0x...` | Wrapped CRO token (ERC20) |
-| **SimpleAMM** | `0x...` | Constant product AMM for swaps |
+| **WCRO** | `0x7D7c0E58a280e70B52c8299d9056e0394Fb65750` | Wrapped CRO token (ERC20) |
+| **SimpleAMM** | `0x70a021E9A1C1A503A77e3279941793c017b06f46` | Constant product AMM for swaps |
 
 ### SentinelClamp Features
 ```solidity
