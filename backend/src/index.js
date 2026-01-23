@@ -1629,7 +1629,7 @@ server.listen(PORT, () => {
       if (response.data && response.data.result && response.data.result.data && response.data.result.data.length > 0) {
         const data = response.data.result.data[0]; // API returns array, get first element
         const newPrice = parseFloat(data.a); // Ask price
-        const newChange = parseFloat(data.c); // 24h change
+        const newChange = parseFloat(data.c) * 100; // 24h change (convert from decimal to percentage)
         
         // Only update if we got valid data
         if (!isNaN(newPrice) && newPrice > 0) {
