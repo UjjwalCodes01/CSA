@@ -140,6 +140,12 @@ Aggregates data from 4 independent sources:
          └──────────────────┘            └──────────────────────┘
 ```
 
+### Visual Architecture Diagram
+
+![CSA Architecture](https://i.imgur.com/your-uploaded-image.png)
+
+> **Note:** The architecture diagram shows the complete system flow including External Data Sources, AI Agent Council, Backend Orchestration, Cronos Blockchain, and Frontend Monitoring.
+
 ---
 
 ## 🛠️ Technology Stack & Sponsor Integration
@@ -307,6 +313,15 @@ cp .env.example .env
 # Edit .env with API keys
 python run_autonomous_trader.py
 ```
+
+> ⏱️ **Important:** The AI agent takes **2-3 minutes** to complete its first decision cycle. This includes:
+> - Fetching sentiment from multiple sources (CoinGecko, News APIs, Social Media)
+> - Running multi-agent council voting with 3 AI agents
+> - Analyzing technical indicators and market data
+> - Making x402 micropayments for each service
+> - Recording decisions on-chain
+>
+> Subsequent trades use **15-minute cached analysis** and execute in **5-10 seconds**.
 
 ---
 
