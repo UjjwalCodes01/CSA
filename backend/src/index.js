@@ -1626,8 +1626,8 @@ server.listen(PORT, () => {
         timeout: 10000
       });
       
-      if (response.data && response.data.result && response.data.result.data) {
-        const data = response.data.result.data;
+      if (response.data && response.data.result && response.data.result.data && response.data.result.data.length > 0) {
+        const data = response.data.result.data[0]; // API returns array, get first element
         const newPrice = parseFloat(data.a); // Ask price
         const newChange = parseFloat(data.c); // 24h change
         
