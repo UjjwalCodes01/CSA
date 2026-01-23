@@ -18,6 +18,7 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
 import { ethers } from 'ethers';
+import axios from 'axios';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
@@ -738,6 +739,15 @@ app.post('/api/trades/approve', async (req, res) => {
       approval => approval.id !== tradeId
     );
     
+    // Prevent memory leak: Also remove old pending approvals (>1 hour)
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    agentState.pendingApprovals = agentState.pendingApprovals.filter(
+      approval => {
+        const approvalTime = new Date(approval.timestamp || 0).getTime();
+        return approvalTime > oneHourAgo;
+      }
+    );
+    
     // Broadcast to WebSocket clients
     broadcastToAll({
       type: 'trade_approved',
@@ -824,6 +834,11 @@ app.post('/api/trades/manual', async (req, res) => {
 
     // Add to trade history
     agentState.tradeHistory.push(manualTrade);
+    
+    // Prevent memory overflow: Keep only last 100 trades
+    if (agentState.tradeHistory.length > 100) {
+      agentState.tradeHistory = agentState.tradeHistory.slice(-100);
+    }
 
     // Record blockchain event for real transactions
     if (realTransaction && txHash) {
@@ -1136,6 +1151,12 @@ app.post('/api/agent/propose-transaction', async (req, res) => {
       agentState.transactionProposals = [];
     }
     agentState.transactionProposals.push(proposal);
+    
+    // Prevent memory leak: Remove proposals older than 1 hour
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    agentState.transactionProposals = agentState.transactionProposals.filter(
+      p => new Date(p.timestamp).getTime() > oneHourAgo
+    );
     
     // Broadcast to frontend for user approval
     broadcastToAll({
@@ -1589,6 +1610,90 @@ server.listen(PORT, () => {
   console.log('');
   console.log('💡 To start AI agent:');
   console.log('   1. Use dashboard Start button, or 2. cd ../ai-agent && python run_autonomous_trader.py');
+  console.log('');
+  
+  // ============================================================================
+  // AUTOMATIC CRO PRICE POLLING (Independent of AI Agent)
+  // ============================================================================
+  
+  // Fetch CRO price from Crypto.com Exchange API every 30 seconds
+  // This ensures dashboard always shows live prices even when agent is stopped
+  const fetchCROPrice = async () => {
+    try {
+      // Try CDC Exchange API first (primary source)
+      const response = await axios.get('https://api.crypto.com/v2/public/get-ticker', {
+        params: { instrument_name: 'CRO_USDT' },
+        timeout: 10000
+      });
+      
+      if (response.data && response.data.result && response.data.result.data) {
+        const data = response.data.result.data;
+        const newPrice = parseFloat(data.a); // Ask price
+        const newChange = parseFloat(data.c); // 24h change
+        
+        // Only update if we got valid data
+        if (!isNaN(newPrice) && newPrice > 0) {
+          agentState.marketData.price = newPrice;
+          agentState.marketData.change24h = newChange;
+          
+          console.log(`💹 CRO Price: $${newPrice.toFixed(6)} (${newChange > 0 ? '+' : ''}${newChange.toFixed(2)}%) [CDC Exchange]`);
+        }
+      }
+    } catch (cdcError) {
+      // Fallback to CoinGecko if CDC API fails
+      try {
+        const cgResponse = await axios.get('https://api.coingecko.com/api/v3/simple/price', {
+          params: {
+            ids: 'crypto-com-chain',
+            vs_currencies: 'usd',
+            include_24hr_change: 'true'
+          },
+          timeout: 10000
+        });
+        
+        if (cgResponse.data && cgResponse.data['crypto-com-chain']) {
+          const newPrice = cgResponse.data['crypto-com-chain'].usd;
+          const newChange = cgResponse.data['crypto-com-chain'].usd_24h_change || 0;
+          
+          if (!isNaN(newPrice) && newPrice > 0) {
+            agentState.marketData.price = newPrice;
+            agentState.marketData.change24h = newChange;
+            
+            console.log(`💹 CRO Price: $${newPrice.toFixed(6)} (${newChange > 0 ? '+' : ''}${newChange.toFixed(2)}%) [CoinGecko fallback]`);
+          }
+        }
+      } catch (cgError) {
+        console.error('⚠️  Failed to fetch CRO price (both CDC and CoinGecko failed)');
+        // Don't crash - just skip this update cycle
+      }
+    }
+  };
+  
+  // Initial price fetch
+  fetchCROPrice();
+  
+  // Poll every 30 seconds
+  setInterval(fetchCROPrice, 30000);
+  console.log('💹 Started automatic CRO price polling (every 30 seconds)');
+  
+  // ============================================================================
+  // SELF-PING TO PREVENT RENDER FREE TIER SPIN-DOWN
+  // ============================================================================
+  
+  // Ping self every 10 minutes to keep Render backend awake
+  const selfPing = async () => {
+    try {
+      const backendUrl = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+      await axios.get(`${backendUrl}/api/health`, { timeout: 5000 });
+      console.log('🏓 Self-ping successful (keeping backend alive)');
+    } catch (error) {
+      // Ignore errors - this is just a keepalive
+    }
+  };
+  
+  // Ping every 10 minutes (600,000 ms)
+  setInterval(selfPing, 600000);
+  console.log('🏓 Started self-ping keepalive (every 10 minutes)');
   console.log('');
 });
 
