@@ -145,7 +145,7 @@ class MultiAgentCouncil:
         
         llm_config = {
             "provider": Provider.GoogleGenAI,
-            "model": "gemini-2.0-flash-exp",
+            "model": "gemini-2.5-flash",
             "provider-api-key": gemini_api_key,
             "temperature": 0.4,
         }

@@ -712,3 +712,23 @@ Council Consensus: buy (confidence: 0.72)
   🛡️ Risk Manager: hold (0.70) - The lack of a trend and less than unanimous agreement among sources still calls for a hold position 
   📊 Market Analyst: buy (0.70) - Despite the strong buy signal and positive sentiment score of 0.797, the signal strength of 3/4 and 
   ⚡ Execution Specialist: buy (0.75) - Despite the lack of a trend or volume spike, the persistent strong buy signal justifies further buyi
+
+============================================================
+Time: 2026-01-29 12:09:45
+Signal: weak_buy (2)
+Sentiment: 0.463
+Trending: False
+Council Consensus: hold (confidence: 0.63)
+  🛡️ Risk Manager: hold (0.80) - The weak buy signal is not sufficiently supported by sentiment, source strength, trending, or volume
+  📊 Market Analyst: hold (0.60) - The market exhibits mixed signals with a weak buy indication, slightly negative sentiment, and an ab
+  ⚡ Execution Specialist: buy (0.50) - Capitalize on the weak buy signal for potential upside, acting swiftly despite limited momentum.
+
+============================================================
+Time: 2026-01-29 14:37:54
+Signal: weak_buy (2)
+Sentiment: 0.495
+Trending: False
+Council Consensus: hold (confidence: 0.63)
+  🛡️ Risk Manager: hold (0.60) - The weak buy signal lacks strong supporting evidence, and other market indicators are neutral, sugge
+  📊 Market Analyst: hold (0.70) - The weak buy signal is not strongly supported by sentiment (0.495), source strength (2/4), trending 
+  ⚡ Execution Specialist: buy (0.60) - Capitalize on the weak buy signal for potential upside, despite the lack of strong momentum indicato
